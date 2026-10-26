@@ -1,0 +1,85 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper function to check if user is signed in
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // User accounts collection
+    match /users/{userId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Role definitions and RBAC permissions
+    match /roles/{roleId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // CRM Clients
+    match /clients/{clientId} {
+      allow read, write: if true;
+    }
+
+    // Projects
+    match /projects/{projectId} {
+      allow read, write: if true;
+    }
+
+    // Tasks (Kanban board)
+    match /tasks/{taskId} {
+      allow read, write: if true;
+    }
+
+    // Attendance records
+    match /attendance/{attendanceId} {
+      allow read, write: if true;
+    }
+
+    // Hourly verifications
+    match /hourlyVerifications/{verificationId} {
+      allow read, write: if true;
+    }
+
+    // Content posts (Social Media Calendar)
+    match /contentPosts/{postId} {
+      allow read, write: if true;
+    }
+
+    // Development & Tech Tickets
+    match /tickets/{ticketId} {
+      allow read, write: if true;
+    }
+
+    // Marketing & Ad Campaigns
+    match /campaigns/{campaignId} {
+      allow read, write: if true;
+    }
+
+    // System Activity Logs
+    match /activityLogs/{logId} {
+      allow read, write: if true;
+    }
+
+    // Profile change approval requests
+    match /profileRequests/{requestId} {
+      allow read, write: if true;
+    }
+
+    // Chat channels & messages
+    match /chatChannels/{channelId} {
+      allow read, write: if true;
+    }
+
+    match /chatMessages/{messageId} {
+      allow read, write: if true;
+    }
+
+    // Default safety catch-all
+    match /{document=**} {
+      allow read, write: if isSignedIn();
+    }
+  }
+}

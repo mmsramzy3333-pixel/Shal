@@ -1,0 +1,183 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "System user account with role-based access control",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "email": { "type": "string", "format": "email" },
+        "roleIds": { "type": "array" },
+        "avatar": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "inactive"] },
+        "team": { "type": "string" },
+        "employeeNumber": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "name", "email", "roleIds", "status"]
+    },
+    "Role": {
+      "title": "Role",
+      "description": "RBAC permission bundle",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string", "minLength": 2, "maxLength": 60 },
+        "nameAr": { "type": "string", "minLength": 2, "maxLength": 60 },
+        "code": { "type": "string" },
+        "description": { "type": "string" },
+        "descriptionAr": { "type": "string" },
+        "permissions": { "type": "array" },
+        "isSystem": { "type": "boolean" },
+        "color": { "type": "string" }
+      },
+      "required": ["id", "name", "nameAr", "permissions"]
+    },
+    "ProfileChangeRequest": {
+      "title": "ProfileChangeRequest",
+      "description": "Employee profile change request requiring admin approval",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "userRoleName": { "type": "string" },
+        "currentName": { "type": "string" },
+        "currentAvatar": { "type": "string" },
+        "requestedName": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "requestedAvatar": { "type": "string" },
+        "reason": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "requestedAt": { "type": "string" }
+      },
+      "required": ["id", "userId", "requestedName", "status"]
+    },
+    "Client": {
+      "title": "Client",
+      "description": "CRM client profile and communication log",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "company": { "type": "string", "maxLength": 120 },
+        "industry": { "type": "string", "maxLength": 100 },
+        "status": { "type": "string", "enum": ["lead", "negotiation", "active", "paused", "churned"] },
+        "contactPerson": { "type": "string", "maxLength": 100 },
+        "email": { "type": "string", "format": "email" },
+        "phone": { "type": "string", "maxLength": 40 },
+        "monthlyRetainer": { "type": "number" },
+        "currency": { "type": "string" },
+        "packageTitle": { "type": "string" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "name", "status"]
+    },
+    "Project": {
+      "title": "Project",
+      "description": "Project linked to client with tasks breakdown",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "clientId": { "type": "string" },
+        "name": { "type": "string", "minLength": 2, "maxLength": 150 },
+        "type": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "in_progress", "review", "completed", "on_hold"] },
+        "startDate": { "type": "string" },
+        "endDate": { "type": "string" },
+        "teamType": { "type": "string" },
+        "progress": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "clientId", "name", "status"]
+    },
+    "Task": {
+      "title": "Task",
+      "description": "Kanban task item linked to project and client",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "projectId": { "type": "string" },
+        "clientId": { "type": "string" },
+        "title": { "type": "string", "minLength": 2, "maxLength": 200 },
+        "description": { "type": "string" },
+        "status": { "type": "string", "enum": ["todo", "in_progress", "review", "changes_requested", "client_delivered", "done"] },
+        "priority": { "type": "string", "enum": ["urgent", "high", "medium", "low"] },
+        "assignedTo": { "type": "array" },
+        "createdBy": { "type": "string" },
+        "dueDate": { "type": "string" },
+        "teamType": { "type": "string" },
+        "deliverableCategory": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "title", "status", "priority"]
+    },
+    "AttendanceRecord": {
+      "title": "AttendanceRecord",
+      "description": "Daily employee attendance record with clock in/out and break tracking",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "date": { "type": "string" },
+        "clockIn": { "type": "string" },
+        "clockOut": { "type": "string" },
+        "status": { "type": "string", "enum": ["present", "late", "half_day", "absent"] },
+        "lateMinutes": { "type": "number" },
+        "totalWorkMinutes": { "type": "number" },
+        "breaks": { "type": "array" }
+      },
+      "required": ["id", "userId", "date", "clockIn", "status"]
+    },
+    "HourlyVerification": {
+      "title": "HourlyVerification",
+      "description": "Hourly check-in challenge with grace period to verify active work presence",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "date": { "type": "string" },
+        "challengeTime": { "type": "string" },
+        "expiresAt": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "verified", "missed"] },
+        "verifiedAt": { "type": "string" }
+      },
+      "required": ["id", "userId", "date", "challengeTime", "expiresAt", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Registered agency user documents and assigned roles"
+    },
+    "/roles/{roleId}": {
+      "schema": "Role",
+      "description": "Role definitions and permissions"
+    },
+    "/profileRequests/{requestId}": {
+      "schema": "ProfileChangeRequest",
+      "description": "Pending and reviewed profile change requests"
+    },
+    "/clients/{clientId}": {
+      "schema": "Client",
+      "description": "CRM client profiles"
+    },
+    "/projects/{projectId}": {
+      "schema": "Project",
+      "description": "Client projects"
+    },
+    "/tasks/{taskId}": {
+      "schema": "Task",
+      "description": "Project tasks visualized in Kanban"
+    },
+    "/attendance/{attendanceId}": {
+      "schema": "AttendanceRecord",
+      "description": "Daily employee attendance and work hours"
+    },
+    "/hourlyVerifications/{verificationId}": {
+      "schema": "HourlyVerification",
+      "description": "Hourly active presence verifications"
+    }
+  }
+}

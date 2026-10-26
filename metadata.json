@@ -1,0 +1,8 @@
+{
+  "name": "Shal agency v1",
+  "description": "منظومة رقمية متكاملة لوكالة شال | Shal لإدارة العملاء، تقويم السوشيال ميديا، ومتابعة مهام التصميم والمحتوى لفريق العمل.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

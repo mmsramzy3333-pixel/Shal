@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 420 180" width="100%" height="100%">
+  <!-- Background -->
+  <rect width="420" height="180" rx="20" fill="#0F172A"/>
+  
+  <!-- Icon with Artboard 6.png -->
+  <clipPath id="logoClipShal">
+    <rect x="260" y="25" width="130" height="130" rx="26" />
+  </clipPath>
+  <rect x="260" y="25" width="130" height="130" rx="26" fill="#e4ded5" />
+  <image href="/assets/aistudio/Artboard_6_67181bbc.png" xlink:href="/assets/aistudio/Artboard_6_67181bbc.png" x="260" y="25" width="130" height="130" preserveAspectRatio="xMidYMid slice" clip-path="url(#logoClipShal)" />
+  
+  <!-- Typography for Shal Agency -->
+  <g fill="#ffffff">
+    <text x="235" y="90" text-anchor="end" font-family="'Cairo', sans-serif" font-weight="900" font-size="56">شال</text>
+    <text x="235" y="140" text-anchor="end" font-family="'Plus Jakarta Sans', sans-serif" font-weight="800" font-size="24" fill="#93C5FD">SHAL AGENCY</text>
+  </g>
+</svg>
