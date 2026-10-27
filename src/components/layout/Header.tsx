@@ -128,7 +128,7 @@ export const Header: React.FC<HeaderProps> = ({
 
           {showUserSwitcher && (
             <div
-              className={`absolute mt-2 w-80 rounded-2xl border border-[#BDAF9C]/35 bg-white p-4 shadow-2xl z-50 animate-in fade-in zoom-in-95 duration-150 ${
+              className={`menu-dropdown-animated absolute mt-2 w-80 rounded-2xl border border-[#BDAF9C]/40 bg-white/95 p-4 shadow-2xl z-50 backdrop-blur-xl ${
                 language === 'ar' ? 'left-0' : 'right-0'
               }`}
             >
@@ -137,7 +137,7 @@ export const Header: React.FC<HeaderProps> = ({
                 <img
                   src={currentUser.avatar}
                   alt={currentUser.name}
-                  className="h-12 w-12 rounded-xl object-cover border border-[#BDAF9C]/40 shadow-xs"
+                  className="h-12 w-12 rounded-xl object-cover border border-[#BDAF9C]/40 shadow-xs transition-transform duration-200 hover:scale-105"
                 />
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-extrabold text-[#24291F] truncate">
@@ -148,7 +148,7 @@ export const Header: React.FC<HeaderProps> = ({
                   </p>
                   <div className="flex items-center gap-1.5 mt-1">
                     <span
-                      className="rounded px-1.5 py-0.5 text-[9px] font-bold"
+                      className="rounded-md px-1.5 py-0.5 text-[9px] font-bold shadow-2xs"
                       style={{
                         backgroundColor: activeUserRole?.badgeBg || '#E9E1D6',
                         color: activeUserRole?.color || '#24291F',
@@ -180,9 +180,9 @@ export const Header: React.FC<HeaderProps> = ({
                         );
                       }
                     }}
-                    className="flex items-center justify-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50/70 py-1.5 text-emerald-800 hover:bg-emerald-100 transition-colors cursor-pointer"
+                    className="flex items-center justify-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50/70 py-1.5 text-emerald-800 hover:bg-emerald-100 hover:scale-102 active:scale-97 transition-all cursor-pointer"
                   >
-                    <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                    <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
                     <span>{language === 'ar' ? 'متصل' : 'Online'}</span>
                   </button>
                   <button
@@ -196,7 +196,7 @@ export const Header: React.FC<HeaderProps> = ({
                         );
                       }
                     }}
-                    className="flex items-center justify-center gap-1 rounded-lg border border-amber-200 bg-amber-50/70 py-1.5 text-amber-800 hover:bg-amber-100 transition-colors cursor-pointer"
+                    className="flex items-center justify-center gap-1 rounded-lg border border-amber-200 bg-amber-50/70 py-1.5 text-amber-800 hover:bg-amber-100 hover:scale-102 active:scale-97 transition-all cursor-pointer"
                   >
                     <span className="h-2 w-2 rounded-full bg-amber-500" />
                     <span>{language === 'ar' ? 'مشغول' : 'Busy'}</span>
@@ -212,7 +212,7 @@ export const Header: React.FC<HeaderProps> = ({
                         );
                       }
                     }}
-                    className="flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-slate-100 py-1.5 text-slate-600 hover:bg-slate-200 transition-colors cursor-pointer"
+                    className="flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-slate-100 py-1.5 text-slate-600 hover:bg-slate-200 hover:scale-102 active:scale-97 transition-all cursor-pointer"
                   >
                     <span className="h-2 w-2 rounded-full bg-slate-400" />
                     <span>{language === 'ar' ? 'غير متصل' : 'Offline'}</span>
@@ -228,7 +228,7 @@ export const Header: React.FC<HeaderProps> = ({
                     setShowUserSwitcher(false);
                     if (onOpenProfileModal) onOpenProfileModal();
                   }}
-                  className="w-full flex items-center justify-between rounded-xl px-3 py-2 text-xs font-bold text-[#4C5540] hover:bg-[#4C5540]/10 transition-colors cursor-pointer"
+                  className="dropdown-item-interactive w-full flex items-center justify-between rounded-xl px-3 py-2 text-xs font-bold text-[#4C5540] hover:bg-[#4C5540]/10 transition-all cursor-pointer"
                 >
                   <span className="flex items-center gap-2">
                     <Edit3 className="h-3.5 w-3.5" />
@@ -242,7 +242,7 @@ export const Header: React.FC<HeaderProps> = ({
                     setShowUserSwitcher(false);
                     logout();
                   }}
-                  className="w-full flex items-center justify-between rounded-xl px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                  className="dropdown-item-interactive w-full flex items-center justify-between rounded-xl px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 transition-all cursor-pointer"
                 >
                   <span className="flex items-center gap-2">
                     <LogOut className="h-3.5 w-3.5" />
@@ -259,12 +259,12 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             id="notifications-bell-btn"
             onClick={() => setShowNotifications(!showNotifications)}
-            className="relative rounded-lg p-2 text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+            className="btn-interactive relative rounded-xl p-2 text-slate-600 hover:text-[#4C5540] hover:bg-[#FAF7F2] border border-transparent hover:border-[#BDAF9C]/30 transition-all cursor-pointer"
             title="الإشعارات"
           >
             <Bell className="h-5 w-5" />
             {unreadCount > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-[10px] font-bold text-white shadow-sm ring-2 ring-white">
+              <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-[10px] font-bold text-white shadow-sm ring-2 ring-white animate-bounce">
                 {unreadCount}
               </span>
             )}
@@ -272,7 +272,7 @@ export const Header: React.FC<HeaderProps> = ({
 
           {showNotifications && (
             <div
-              className={`absolute mt-2 w-80 sm:w-96 rounded-2xl border border-slate-200 bg-white p-3 shadow-2xl z-50 animate-in fade-in duration-150 ${
+              className={`menu-dropdown-animated absolute mt-2 w-80 sm:w-96 rounded-2xl border border-[#BDAF9C]/40 bg-white/95 p-3.5 shadow-2xl z-50 backdrop-blur-xl ${
                 language === 'ar' ? 'left-0' : 'right-0'
               }`}
             >
@@ -290,14 +290,14 @@ export const Header: React.FC<HeaderProps> = ({
                 {unreadCount > 0 && (
                   <button
                     onClick={markAllNotificationsAsRead}
-                    className="text-[11px] font-bold text-[#2563EB] hover:underline"
+                    className="text-[11px] font-bold text-[#4C5540] hover:underline cursor-pointer transition-colors"
                   >
                     {language === 'ar' ? 'تحديد الكل كمقروء' : 'Mark all as read'}
                   </button>
                 )}
               </div>
 
-              <div className="mt-2 max-h-72 overflow-y-auto space-y-1.5">
+              <div className="mt-2.5 max-h-72 overflow-y-auto space-y-1.5">
                 {userNotifications.length === 0 ? (
                   <p className="text-center py-6 text-xs text-slate-400">
                     {language === 'ar' ? 'لا توجد إشعارات حالياً' : 'No notifications'}
@@ -311,8 +311,10 @@ export const Header: React.FC<HeaderProps> = ({
                         if (notif.linkTab) setActiveTab(notif.linkTab);
                         setShowNotifications(false);
                       }}
-                      className={`p-2.5 rounded-xl text-xs transition-colors cursor-pointer ${
-                        notif.isRead ? 'bg-slate-50/60 text-slate-600' : 'bg-blue-50/70 border border-blue-100 text-slate-900 font-medium'
+                      className={`dropdown-item-interactive p-3 rounded-xl text-xs transition-all cursor-pointer ${
+                        notif.isRead
+                          ? 'bg-slate-50/70 text-slate-600 hover:bg-slate-100'
+                          : 'bg-emerald-50/70 border border-emerald-100 text-slate-900 font-medium hover:bg-emerald-100/70'
                       }`}
                     >
                       <p className="font-bold text-xs">{notif.title}</p>

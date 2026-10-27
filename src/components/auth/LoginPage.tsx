@@ -233,13 +233,13 @@ export const LoginPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => {
-                    alert(
+                    setErrorMessage(
                       language === 'ar'
                         ? 'لإعادة تعيين كلمة المرور أو استلام بيانات الدخول، يرجى التواصل مباشرة مع إدارة وكالة شال أو المالك.'
                         : 'To reset your password or receive credentials, contact Shal Agency management or the Founder.'
                     );
                   }}
-                  className="text-[11px] font-semibold text-[#4C5540] hover:underline"
+                  className="text-[11px] font-semibold text-[#4C5540] hover:underline cursor-pointer"
                 >
                   {language === 'ar' ? 'نسيت كلمة المرور؟' : 'Forgot password?'}
                 </button>

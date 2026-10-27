@@ -1,19 +1,32 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import {
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  signOut,
-  onAuthStateChanged,
-  GoogleAuthProvider,
-  signInWithPopup,
-} from 'firebase/auth';
-import { auth } from '../lib/firebase';
+  supabase,
+  AppRole,
+  mapRoleToSupabaseRole,
+  mapSupabaseRoleToRoleId,
+  DbProfile,
+} from '../lib/supabase';
+import {
+  getSupabaseProfiles,
+  updateSupabaseUserRole,
+  updateSupabaseProfile,
+  upsertSupabaseProfile,
+  deleteSupabaseProfile,
+  getSupabaseTasks,
+  createTask as createSupabaseTask,
+  updateTask as updateSupabaseTask,
+  deleteSupabaseTask,
+  getSupabaseAuditLogs,
+  subscribeToAuditLogsRealtime,
+  auditLogToActivityItem,
+  profileToUser,
+  userToProfile,
+} from '../lib/supabaseService';
 import {
   saveDocument,
   updateDocument,
   deleteDocument,
   subscribeToCollection,
-  checkAndSeedFirestore,
 } from '../lib/firestoreService';
 import {
   User,
@@ -74,6 +87,9 @@ interface AppContextType {
   currentUser: User;
   setCurrentUser: (user: User) => void;
   currentUserRole: Role | undefined;
+  currentAppRole: AppRole;
+  isOwner: boolean;
+  isAdminOrOwner: boolean;
   users: User[];
   roles: Role[];
   permissions: Permission[];
@@ -473,129 +489,82 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Find the primary role of the active logged in user
   const currentUserRole = currentUser ? (roles.find((r) => currentUser.roleIds?.includes(r.id)) || roles[0]) : roles[0];
+  const currentAppRole: AppRole = currentUser
+    ? (currentUser.roleIds.includes('role-founder') || currentUserRole?.code === 'founder'
+        ? 'owner'
+        : currentUser.roleIds.includes('role-operations-manager') || currentUserRole?.code === 'operations_mgr'
+        ? 'admin'
+        : 'member')
+    : 'member';
+  const isOwner = currentAppRole === 'owner';
+  const isAdminOrOwner = currentAppRole === 'owner' || currentAppRole === 'admin';
+
   const todayStr = new Date().toISOString().slice(0, 10);
   const todayAttendance = currentUser
     ? attendanceRecords.find((rec) => rec.userId === currentUser.id && rec.date === todayStr) || null
     : null;
 
-  // 1. Initial Firestore setup (system roles only)
+  // 1. Initial Supabase PostgreSQL Profiles & Audit Logs sync
   useEffect(() => {
-    checkAndSeedFirestore(INITIAL_ROLES, []);
-  }, []);
+    let isMounted = true;
+    async function loadInitialSupabaseData() {
+      try {
+        const dbProfiles = await getSupabaseProfiles();
+        if (isMounted && dbProfiles && dbProfiles.length > 0) {
+          const mapped = dbProfiles.map(profileToUser);
+          setUsers(mapped);
+        }
 
-  // 2. Real-time Firestore Subscriptions
-  useEffect(() => {
-    const unsubTasks = subscribeToCollection<Task>('tasks', (data) => {
-      setTasks(data || []);
-    });
+        const dbLogs = await getSupabaseAuditLogs(50);
+        if (isMounted && dbLogs && dbLogs.length > 0) {
+          setActivityLogs(dbLogs.map(auditLogToActivityItem));
+        }
 
-    const unsubClients = subscribeToCollection<Client>('clients', (data) => {
-      setClients(data || []);
-    });
-
-    const unsubProjects = subscribeToCollection<Project>('projects', (data) => {
-      setProjects(data || []);
-    });
-
-    const unsubAttendance = subscribeToCollection<AttendanceRecord>('attendance', (data) => {
-      setAttendanceRecords(data || []);
-    });
-
-    const unsubHourly = subscribeToCollection<HourlyVerification>('hourlyVerifications', (data) => {
-      if (currentUser) {
-        const myPending = (data || []).find(
-          (h) => h.userId === currentUser.id && h.status === 'pending'
-        );
-        setActiveHourlyVerification(myPending || null);
+        const dbTasks = await getSupabaseTasks();
+        if (isMounted && dbTasks && dbTasks.length > 0) {
+          const mappedTasks: Task[] = dbTasks.map((t) => ({
+            id: t.id,
+            title: t.title,
+            description: t.description || '',
+            status: (t.status as any) || 'todo',
+            priority: (t.priority as any) || 'medium',
+            teamType: (t.team_type as any) || 'social',
+            clientId: t.client_id || '',
+            projectId: t.project_id || '',
+            assignedTo: t.assigned_to || [],
+            createdBy: t.created_by || '',
+            dueDate: t.due_date || '',
+            subtasks: [],
+            comments: [],
+            createdAt: t.created_at || new Date().toISOString(),
+          }));
+          setTasks(mappedTasks);
+        }
+      } catch (err) {
+        console.warn('[Supabase Initial Sync note]:', err);
       }
-    });
+    }
+    loadInitialSupabaseData();
 
-    const unsubUsers = subscribeToCollection<User>('users', (data) => {
-      setUsers(data || []);
-    });
-
-    const unsubRoles = subscribeToCollection<Role>('roles', (data) => {
-      if (data && data.length > 0) {
-        setRoles(data);
-      } else {
-        setRoles(INITIAL_ROLES);
-      }
-    });
-
-    const unsubPosts = subscribeToCollection<ContentPost>('contentPosts', (data) => {
-      setContentPosts(data || []);
-    });
-
-    const unsubTickets = subscribeToCollection<Ticket>('tickets', (data) => {
-      setTickets(data || []);
-    });
-
-    const unsubCampaigns = subscribeToCollection<AdCampaign>('campaigns', (data) => {
-      setCampaigns(data || []);
-    });
-
-    const unsubProfileReqs = subscribeToCollection<ProfileChangeRequest>('profileRequests', (data) => {
-      setProfileRequests(data || []);
-    });
-
-    const unsubLogs = subscribeToCollection<ActivityLogItem>('activityLogs', (data) => {
-      setActivityLogs(data || []);
+    // 2. Subscribe to real-time changes on public.audit_logs
+    const unsubAudit = subscribeToAuditLogsRealtime((newDbLog) => {
+      const item = auditLogToActivityItem(newDbLog);
+      setActivityLogs((prev) => [item, ...prev.filter((l) => l.id !== item.id)]);
     });
 
     return () => {
-      unsubTasks();
-      unsubClients();
-      unsubProjects();
-      unsubAttendance();
-      unsubHourly();
-      unsubUsers();
-      unsubRoles();
-      unsubPosts();
-      unsubTickets();
-      unsubCampaigns();
-      unsubProfileReqs();
-      unsubLogs();
+      isMounted = false;
+      unsubAudit();
     };
-  }, [currentUser]);
+  }, []);
 
-  // 3. Firebase Authentication State Listener
+  // 3. Supabase Authentication State Listener
   useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (firebaseUser) {
-        const cleanEmail = (firebaseUser.email || '').toLowerCase();
-        let match = users.find(
-          (u) => u.id === firebaseUser.uid || (cleanEmail && u.email.toLowerCase() === cleanEmail)
-        );
-
-        if (!match && cleanEmail) {
-          const saved = localStorage.getItem(`${STORAGE_KEY}_current_user`);
-          if (saved) {
-            try {
-              const parsed = JSON.parse(saved);
-              if (parsed.email?.toLowerCase() === cleanEmail) {
-                match = parsed;
-              }
-            } catch {
-              // ignore
-            }
-          }
-          if (!match) {
-            const newUser: User = {
-              id: firebaseUser.uid,
-              name: firebaseUser.displayName || cleanEmail.split('@')[0],
-              email: cleanEmail,
-              roleIds: users.length === 0 ? ['role-founder'] : ['role-social-media-specialist'],
-              avatar: firebaseUser.photoURL || getShalEmployeeAvatar('01', '#0F172A'),
-              employeeNumber: '01',
-              status: 'active',
-              team: 'management',
-              createdAt: new Date().toISOString().slice(0, 10),
-            };
-            await saveDocument('users', newUser);
-            match = newUser;
-          }
-        }
-
+    // 3.1 Initial session check
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        const email = session.user.email?.toLowerCase();
+        const match = users.find((u) => u.id === session.user.id || (email && u.email.toLowerCase() === email));
         if (match) {
           setCurrentUser(match);
           localStorage.setItem(`${STORAGE_KEY}_active_session`, match.id);
@@ -607,31 +576,51 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const match = users.find((u) => u.id === activeSessionId);
           if (match) {
             setCurrentUser(match);
-          } else {
-            const saved = localStorage.getItem(`${STORAGE_KEY}_current_user`);
-            if (saved) {
-              try {
-                const parsed = JSON.parse(saved);
-                if (parsed.id === activeSessionId) {
-                  setCurrentUser(parsed);
-                } else {
-                  setCurrentUser(null as any);
-                }
-              } catch {
-                setCurrentUser(null as any);
-              }
-            } else {
-              setCurrentUser(null as any);
-            }
           }
-        } else {
-          setCurrentUser(null as any);
         }
       }
       setAuthLoading(false);
     });
 
-    return () => unsubscribeAuth();
+    // 3.2 Live auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session?.user) {
+        const email = session.user.email?.toLowerCase();
+        let match = users.find((u) => u.id === session.user.id || (email && u.email.toLowerCase() === email));
+        if (!match && email) {
+          match = {
+            id: session.user.id,
+            name: session.user.user_metadata?.name || email.split('@')[0],
+            email,
+            roleIds: users.length === 0 ? ['role-founder'] : ['role-marketing-manager'],
+            employeeNumber: String(users.length + 1).padStart(2, '0'),
+            team: users.length === 0 ? 'management' : 'operations',
+            avatar: getShalEmployeeAvatar('01', '#0F172A'),
+            status: 'active',
+            createdAt: new Date().toISOString().slice(0, 10),
+          };
+          setUsers((prev) => [...prev.filter((u) => u.id !== match!.id), match!]);
+        }
+        if (match) {
+          setCurrentUser(match);
+          localStorage.setItem(`${STORAGE_KEY}_active_session`, match.id);
+          localStorage.setItem(`${STORAGE_KEY}_current_user`, JSON.stringify(match));
+        }
+      } else {
+        const activeSessionId = localStorage.getItem(`${STORAGE_KEY}_active_session`);
+        if (activeSessionId) {
+          const match = users.find((u) => u.id === activeSessionId);
+          if (match) {
+            setCurrentUser(match);
+          }
+        }
+      }
+      setAuthLoading(false);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, [users]);
 
   useEffect(() => {
@@ -813,112 +802,100 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setRolePermissions((prev) => prev.filter((m) => m.id !== mappingId));
   };
 
-  const assignUserRoles = (userId: string, roleIds: string[]) => {
+  const assignUserRoles = async (userId: string, roleIds: string[]) => {
     setUsers((prev) =>
       prev.map((u) => (u.id === userId ? { ...u, roleIds } : u))
     );
-    if (currentUser.id === userId) {
+    if (currentUser?.id === userId) {
       setCurrentUser((prev) => ({ ...prev, roleIds }));
     }
+    const targetRole = roleIds[0] || 'role-marketing-manager';
+    const appRole = mapRoleToSupabaseRole(targetRole);
+    // Atomic PostgreSQL trigger trg_profile_role_changed writes to public.audit_logs
+    await updateSupabaseUserRole(userId, appRole);
   };
 
-  // 4. Real Authentication Actions
+  // 4. Supabase Authentication Actions
   const login = async (email: string, pass: string): Promise<{ success: boolean; error?: string }> => {
     const cleanEmail = email.trim().toLowerCase();
     try {
-      const cred = await signInWithEmailAndPassword(auth, cleanEmail, pass);
-      const fbUser = cred.user;
-      let matched = users.find((u) => u.id === fbUser.uid || u.email.toLowerCase() === cleanEmail);
-      if (!matched) {
-        matched = {
-          id: fbUser.uid,
-          name: fbUser.displayName || cleanEmail.split('@')[0],
-          email: cleanEmail,
-          roleIds: users.length === 0 ? ['role-founder'] : ['role-social-media-specialist'],
-          avatar: getShalEmployeeAvatar('01', '#0F172A'),
-          employeeNumber: '01',
-          status: 'active',
-          team: 'management',
-          createdAt: new Date().toISOString().slice(0, 10),
-        };
-        await saveDocument('users', matched);
-        setUsers((prev) => [...prev.filter((u) => u.id !== matched!.id), matched!]);
-      }
-      setCurrentUser(matched);
-      localStorage.setItem(`${STORAGE_KEY}_active_session`, matched.id);
-      localStorage.setItem(`${STORAGE_KEY}_current_user`, JSON.stringify(matched));
-      showToast({
-        type: 'success',
-        title: 'تم تسجيل الدخول بنجاح',
-        message: `مرحباً بك مجدداً ${matched.name}`,
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: cleanEmail,
+        password: pass,
       });
-      return { success: true };
-    } catch (err: any) {
-      console.warn('Firebase signInWithEmailAndPassword note:', err.code, err.message);
-      // If user exists in Firestore users collection
-      const dbUser = users.find((u) => u.email.toLowerCase() === cleanEmail);
-      if (dbUser) {
-        setCurrentUser(dbUser);
-        localStorage.setItem(`${STORAGE_KEY}_active_session`, dbUser.id);
-        localStorage.setItem(`${STORAGE_KEY}_current_user`, JSON.stringify(dbUser));
+
+      if (error) {
+        console.warn('[Supabase Auth Warning]:', error.message);
+        // Fallback match for provisioned agency users
+        const matchedUser = users.find(
+          (u) => u.email.toLowerCase() === cleanEmail && (u.password === pass || !u.password)
+        );
+        if (matchedUser) {
+          setCurrentUser(matchedUser);
+          localStorage.setItem(`${STORAGE_KEY}_active_session`, matchedUser.id);
+          localStorage.setItem(`${STORAGE_KEY}_current_user`, JSON.stringify(matchedUser));
+          showToast({
+            type: 'success',
+            title: 'تم تسجيل الدخول بنجاح',
+            message: `مرحباً بك مجدداً ${matchedUser.name}`,
+          });
+          return { success: true };
+        }
+        return {
+          success: false,
+          error: 'بيانات الدخول غير صحيحة. يرجى التحقق من البريد الإلكتروني وكلمة المرور.',
+        };
+      }
+
+      if (data?.user) {
+        let matched = users.find((u) => u.id === data.user.id || u.email.toLowerCase() === cleanEmail);
+        if (!matched) {
+          matched = {
+            id: data.user.id,
+            name: data.user.user_metadata?.name || cleanEmail.split('@')[0],
+            email: cleanEmail,
+            roleIds: users.length === 0 ? ['role-founder'] : ['role-marketing-manager'],
+            avatar: getShalEmployeeAvatar('01', '#0F172A'),
+            employeeNumber: '01',
+            status: 'active',
+            team: 'management',
+            createdAt: new Date().toISOString().slice(0, 10),
+          };
+          setUsers((prev) => [...prev.filter((u) => u.id !== matched!.id), matched!]);
+        }
+        setCurrentUser(matched);
+        localStorage.setItem(`${STORAGE_KEY}_active_session`, matched.id);
+        localStorage.setItem(`${STORAGE_KEY}_current_user`, JSON.stringify(matched));
         showToast({
           type: 'success',
           title: 'تم تسجيل الدخول بنجاح',
-          message: `مرحباً بك ${dbUser.name}`,
+          message: `مرحباً بك مجدداً ${matched.name}`,
         });
         return { success: true };
       }
 
-      let errorMsg = 'بيانات الدخول غير صحيحة. يرجى التحقق من البريد وكلمة المرور.';
-      if (err.code === 'auth/operation-not-allowed') {
-        errorMsg = 'تسجيل الدخول بالبريد الإلكتروني غير مفعّل، يمكنك تسجيل الدخول بواسطة زر Google المباشر.';
-      } else if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
-        errorMsg = 'الحساب غير مسجل أو بيانات المرور غير مطابقة.';
-      } else if (err.code === 'auth/wrong-password') {
-        errorMsg = 'كلمة المرور غير صحيحة.';
-      }
-      return { success: false, error: errorMsg };
+      return { success: false, error: 'تعذر التحقق من بيانات الدخول.' };
+    } catch (err: any) {
+      console.error('[Supabase Auth Exception]:', err);
+      return { success: false, error: err.message || 'حدث خطأ أثناء تسجيل الدخول.' };
     }
   };
 
   const loginWithGoogle = async (): Promise<{ success: boolean; error?: string }> => {
     try {
-      const provider = new GoogleAuthProvider();
-      const cred = await signInWithPopup(auth, provider);
-      const fbUser = cred.user;
-      const cleanEmail = (fbUser.email || '').toLowerCase();
-      let matched = users.find((u) => u.id === fbUser.uid || (cleanEmail && u.email.toLowerCase() === cleanEmail));
-
-      if (!matched) {
-        matched = {
-          id: fbUser.uid,
-          name: fbUser.displayName || (cleanEmail ? cleanEmail.split('@')[0] : 'عضو الفريق'),
-          email: cleanEmail,
-          roleIds: users.length === 0 ? ['role-founder'] : ['role-social-media-specialist'],
-          avatar: fbUser.photoURL || getShalEmployeeAvatar(String(users.length + 1).padStart(2, '0'), '#0F172A'),
-          employeeNumber: String(users.length + 1).padStart(2, '0'),
-          status: 'active',
-          team: users.length === 0 ? 'management' : 'operations',
-          createdAt: new Date().toISOString().slice(0, 10),
-        };
-        await saveDocument('users', matched);
-        setUsers((prev) => [...prev.filter((u) => u.id !== matched!.id), matched!]);
-      }
-
-      setCurrentUser(matched);
-      localStorage.setItem(`${STORAGE_KEY}_active_session`, matched.id);
-      localStorage.setItem(`${STORAGE_KEY}_current_user`, JSON.stringify(matched));
-      showToast({
-        type: 'success',
-        title: 'تم تسجيل الدخول بواسطة Google',
-        message: `مرحباً بك، ${matched.name}`,
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin,
+        },
       });
+
+      if (error) {
+        return { success: false, error: error.message };
+      }
       return { success: true };
     } catch (err: any) {
       console.error('Google Sign In error:', err);
-      if (err.code === 'auth/popup-closed-by-user') {
-        return { success: false, error: 'تم إلغاء نافذة تسجيل الدخول بواسطة Google.' };
-      }
       return { success: false, error: err.message || 'فشل تسجيل الدخول بواسطة Google.' };
     }
   };
@@ -931,67 +908,49 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     employeeNumber: string;
     team: AgencyTeam;
   }): Promise<{ success: boolean; error?: string }> => {
-    // Registration is strictly restricted to Founder and Management (or first system onboarding)
-    const isAuthorizedAdmin =
-      users.length === 0 ||
-      (currentUser &&
-        (currentUser.roleIds.includes('role-founder') ||
-          currentUser.roleIds.includes('role-operations-manager') ||
-          hasPermission('can_manage_roles') ||
-          hasPermission('can_manage_team_members')));
-
-    if (!isAuthorizedAdmin) {
+    // Registration is strictly restricted to Founder / Owner
+    if (!isOwner && users.length > 0) {
       return {
         success: false,
-        error: 'إنشاء وتسجيل الحسابات الجديدة مقتصر حصرياً على المالك (الفاوندر) أو الإدارة العليا لوكالة شال.',
+        error: 'إنشاء وتسجيل الحسابات الجديدة مقتصر حصرياً على المالك (الفاوندر) لوكالة شال.',
       };
     }
 
     const cleanEmail = userData.email.trim().toLowerCase();
-    let uid = `user-${Date.now()}`;
-    try {
-      const cred = await createUserWithEmailAndPassword(auth, cleanEmail, userData.password);
-      uid = cred.user.uid;
-    } catch (err: any) {
-      if (err.code !== 'auth/operation-not-allowed' && err.code !== 'auth/email-already-in-use') {
-        return { success: false, error: err.message || 'فشل إنشاء الحساب في نظام التوثيق' };
-      }
-    }
+    const empNum = userData.employeeNumber || String(users.length + 1).padStart(2, '0');
+    const newUid = `user-${Date.now()}`;
 
     const newUser: User = {
-      id: uid,
+      id: newUid,
       name: userData.name.trim(),
       email: cleanEmail,
-      roleIds: userData.roleId ? [userData.roleId] : ['role-social-media-specialist'],
-      avatar: getShalEmployeeAvatar(userData.employeeNumber || `${users.length + 1}`, '#0F172A'),
-      employeeNumber: userData.employeeNumber || String(users.length + 1).padStart(2, '0'),
+      password: userData.password,
+      roleIds: userData.roleId ? [userData.roleId] : ['role-marketing-manager'],
+      avatar: getShalEmployeeAvatar(empNum, '#0F172A'),
+      employeeNumber: empNum,
       status: 'active',
       team: userData.team || 'operations',
       createdAt: new Date().toISOString().slice(0, 10),
     };
 
-    try {
-      await saveDocument('users', newUser);
-      setUsers((prev) => [...prev.filter((u) => u.id !== newUser.id), newUser]);
-      setCurrentUser(newUser);
-      localStorage.setItem(`${STORAGE_KEY}_active_session`, newUser.id);
-      localStorage.setItem(`${STORAGE_KEY}_current_user`, JSON.stringify(newUser));
-      showToast({
-        type: 'success',
-        title: 'تم إنشاء الحساب بنجاح',
-        message: `أهلاً بك في وكالة شال، ${newUser.name}!`,
-      });
-      return { success: true };
-    } catch (err: any) {
-      return { success: false, error: err.message || 'فشل حفظ بيانات الحساب في قاعدة البيانات' };
-    }
+    setUsers((prev) => [...prev.filter((u) => u.id !== newUser.id), newUser]);
+    setCurrentUser(newUser);
+    localStorage.setItem(`${STORAGE_KEY}_active_session`, newUser.id);
+    localStorage.setItem(`${STORAGE_KEY}_current_user`, JSON.stringify(newUser));
+
+    showToast({
+      type: 'success',
+      title: 'تم إنشاء وتثبيت الحساب',
+      message: `أهلاً بك في وكالة شال، ${newUser.name}!`,
+    });
+    return { success: true };
   };
 
   const logout = async () => {
     try {
-      await signOut(auth);
+      await supabase.auth.signOut();
     } catch (err) {
-      console.error('Logout error:', err);
+      console.warn('Logout note:', err);
     }
     setCurrentUser(null as any);
     localStorage.removeItem(`${STORAGE_KEY}_active_session`);
@@ -1306,6 +1265,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setTasks((prev) => [newTask, ...prev]);
     saveDocument('tasks', newTask);
+
+    // Sync to Supabase PostgreSQL tasks table with current user session
+    createSupabaseTask({
+      title: newTask.title,
+      description: newTask.description,
+      status: newTask.status,
+      priority: newTask.priority,
+      team_type: newTask.teamType,
+      client_id: newTask.clientId,
+      project_id: newTask.projectId,
+      assigned_to: newTask.assignedTo,
+      due_date: newTask.dueDate,
+    }).catch((err) => console.warn('[Supabase createTask sync note]:', err));
+
     logActivity('أنشأ مهمة جديدة', 'Created a task', 'task', newTask.title);
 
     // Notify assigned users
@@ -1331,6 +1304,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       prev.map((t) => (t.id === taskId ? { ...t, status } : t))
     );
     updateDocument('tasks', taskId, { status });
+    updateSupabaseTask(taskId, { status }).catch((err) =>
+      console.warn('[Supabase updateTask status note]:', err)
+    );
     const targetTask = tasks.find((t) => t.id === taskId);
     logActivity(
       `غيّر حالة المهمة إلى (${status})`,
@@ -1345,11 +1321,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       prev.map((t) => (t.id === id ? { ...t, ...updates } : t))
     );
     updateDocument('tasks', id, updates);
+    updateSupabaseTask(id, {
+      title: updates.title,
+      description: updates.description,
+      status: updates.status,
+      priority: updates.priority,
+      assigned_to: updates.assignedTo,
+      due_date: updates.dueDate,
+    }).catch((err) => console.warn('[Supabase updateTask note]:', err));
   };
 
-  const deleteTask = (id: string) => {
+  const deleteTask = async (id: string) => {
     const target = tasks.find((t) => t.id === id);
     setTasks((prev) => prev.filter((t) => t.id !== id));
+    // Atomic Postgres trigger trg_task_deleted logs into public.audit_logs
+    await deleteSupabaseTask(id);
     deleteDocument('tasks', id);
     logActivity('حذف مهمة', 'Deleted task', 'task', target?.title || id);
     showToast({
@@ -1799,38 +1785,45 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const addUser = async (userData: Omit<User, 'id' | 'createdAt'>) => {
-    // Only founder, operations manager, or authorized administrator can add new members
-    const isAuthorizedAdmin =
-      users.length === 0 ||
-      !currentUser ||
-      currentUser.roleIds.includes('role-founder') ||
-      currentUser.roleIds.includes('role-operations-manager') ||
-      hasPermission('can_manage_roles') ||
-      hasPermission('can_manage_team_members');
-
-    if (!isAuthorizedAdmin) {
+    // Strictly Owner Only: Only Shal Agency Founder is authorized to provision and onboard team members
+    if (!isOwner && users.length > 0) {
       showToast({
         type: 'error',
         title: 'غير مصرح بالإجراء',
-        message: 'إنشاء وإضافة حسابات جديدة مقتصر حصرياً على المالك وإدارة وكالة شال.',
+        message: 'إضافة أعضاء جدد للفريق وتحديد صلاحياتهم مقتصر حصرياً على المالك (الفاوندر).',
       });
       return;
     }
 
     const empNum = userData.employeeNumber || String(users.length + 1).padStart(2, '0');
+    const newUserId = `user-${Date.now()}`;
+    const targetRole = userData.roleIds[0] || 'role-marketing-manager';
+    const appRole = mapRoleToSupabaseRole(targetRole);
+
     const newUser: User = {
       ...userData,
-      id: `user-${Date.now()}`,
+      id: newUserId,
       employeeNumber: empNum,
       createdAt: new Date().toISOString().slice(0, 10),
       avatar: userData.avatar || getShalEmployeeAvatar(empNum, '#0F172A'),
     };
 
     setUsers((prev) => [...prev.filter((u) => u.id !== newUser.id), newUser]);
+
+    // Provision into Supabase Profiles table
     try {
-      await saveDocument('users', newUser);
+      await upsertSupabaseProfile({
+        id: newUserId,
+        name: newUser.name,
+        email: newUser.email,
+        role: appRole,
+        employee_number: empNum,
+        team: newUser.team,
+        avatar: newUser.avatar,
+        status: 'active',
+      });
     } catch (err) {
-      console.error('Error saving user to Firestore:', err);
+      console.warn('[Supabase Profile Upsert note]:', err);
     }
 
     logActivity('سجل عضواً جديداً في الفريق وأصدر بيانات دخوله', 'Onboarded new team member account', 'member', newUser.name);
@@ -1852,26 +1845,41 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return u;
       })
     );
+
     if (currentUser?.id === userId) {
       setCurrentUser((prev) => ({ ...prev, ...updates }));
     }
+
+    // Role modification trigger in Supabase (triggers trg_profile_role_changed in PostgreSQL)
+    if (updates.roleIds && updates.roleIds.length > 0) {
+      const appRole = mapRoleToSupabaseRole(updates.roleIds[0]);
+      await updateSupabaseUserRole(userId, appRole);
+    }
+
     if (updatedObj) {
-      try {
-        await saveDocument('users', updatedObj);
-      } catch (err) {
-        console.error('Error updating user in Firestore:', err);
-      }
+      const dbProf = userToProfile(updatedObj);
+      await updateSupabaseProfile(userId, dbProf);
     }
   };
 
   const deleteUser = async (userId: string) => {
-    setUsers((prev) => prev.filter((u) => u.id !== userId));
-    try {
-      await deleteDocument('users', userId);
-    } catch (err) {
-      console.error('Error deleting user from Firestore:', err);
+    if (!isOwner) {
+      showToast({
+        type: 'error',
+        title: 'غير مصرح بالإجراء',
+        message: 'حذف حسابات الموظفين مقتصر حصرياً على المالك (الفاوندر).',
+      });
+      return;
     }
+
+    setUsers((prev) => prev.filter((u) => u.id !== userId));
+    await deleteSupabaseProfile(userId);
     logActivity('حذف حساب موظف من النظام', 'Deleted team member account', 'member', userId);
+    showToast({
+      type: 'warning',
+      title: 'تم حذف الحساب',
+      message: 'تمت إزالة صلاحيات وصول الموظف نهائياً.',
+    });
   };
 
   const toggleUserStatus = async (userId: string) => {
@@ -2151,6 +2159,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         currentUser,
         setCurrentUser,
         currentUserRole,
+        currentAppRole,
+        isOwner,
+        isAdminOrOwner,
         isAuthenticated,
         authLoading,
         login,

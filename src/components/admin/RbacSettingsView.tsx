@@ -24,6 +24,7 @@ import {
   Eye,
   EyeOff,
   Copy,
+  History,
 } from 'lucide-react';
 
 import { AssetCustomizerView } from './AssetCustomizerView';
@@ -47,9 +48,12 @@ export const RbacSettingsView: React.FC = () => {
     hasPermission,
     language,
     resetDemoData,
+    isOwner,
+    isAdminOrOwner,
+    activityLogs,
   } = useApp();
 
-  const [activeTab, setActiveTab] = useState<'matrix' | 'members' | 'approvals' | 'assets'>('matrix');
+  const [activeTab, setActiveTab] = useState<'matrix' | 'members' | 'approvals' | 'assets' | 'audit_logs'>('matrix');
   const [selectedRole, setSelectedRole] = useState<Role>(roles[0]);
 
   // Add Role modal
@@ -59,7 +63,7 @@ export const RbacSettingsView: React.FC = () => {
   const [newRoleDesc, setNewRoleDesc] = useState('');
   const [newRoleColor, setNewRoleColor] = useState('#2563EB');
 
-  // Add User modal (Restricted exclusively to Owner / Management)
+  // Add User modal (Restricted EXCLUSIVELY to Owner / Shal Founder)
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
   const [userName, setUserName] = useState('');
   const [userEmail, setUserEmail] = useState('');
@@ -77,12 +81,9 @@ export const RbacSettingsView: React.FC = () => {
   const [roleToDelete, setRoleToDelete] = useState<Role | null>(null);
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
 
-  // Strictly ensure only Founder and Operations Manager can manage roles and users
-  const isSuperAdmin =
-    currentUser.roleIds.includes('role-founder') ||
-    currentUser.roleIds.includes('role-operations-manager');
-  const canManageRoles = isSuperAdmin || hasPermission('can_manage_roles');
-  const canManageMembers = isSuperAdmin || hasPermission('can_manage_team_members');
+  // Strictly ensure only Founder can manage users and roles
+  const canManageRoles = isOwner || hasPermission('can_manage_roles');
+  const canManageMembers = isOwner || hasPermission('can_manage_team_members');
 
   // Group permissions by agency category
   const categories: { id: PermissionCategory; labelAr: string; labelEn: string; icon: any }[] = [
@@ -138,6 +139,7 @@ export const RbacSettingsView: React.FC = () => {
 
   const handleCreateUser = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isOwner) return;
     if (!userName.trim()) return;
 
     const empNum = userEmployeeNumber.trim() || String(users.length + 1).padStart(2, '0');
@@ -223,6 +225,15 @@ export const RbacSettingsView: React.FC = () => {
           >
             <Palette className="h-3.5 w-3.5" />
             <span>{language === 'ar' ? 'تخصيص الأيقونات والصور' : 'Custom Assets'}</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('audit_logs')}
+            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all cursor-pointer ${
+              activeTab === 'audit_logs' ? 'bg-[#24291F] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <History className="h-3.5 w-3.5 text-emerald-400" />
+            <span>{language === 'ar' ? 'سجل التدقيق (Audit Logs)' : 'Audit Logs'}</span>
           </button>
         </div>
       </div>
@@ -455,18 +466,23 @@ export const RbacSettingsView: React.FC = () => {
               </p>
             </div>
 
-            {canManageMembers && (
+            {isOwner ? (
               <button
                 onClick={() => setIsAddUserOpen(true)}
                 className="btn-interactive flex items-center gap-1.5 rounded-xl bg-[#4C5540] px-3.5 py-1.5 text-xs font-bold text-white hover:bg-[#3B4432] shadow-xs cursor-pointer"
               >
                 <UserPlus className="h-4 w-4" />
-                {language === 'ar' ? 'إضافة موظف واعتماد حسابه' : 'New Member'}
+                {language === 'ar' ? 'إضافة عضو جديد للفريق (المالك فقط)' : 'Add Team Member (Owner Only)'}
               </button>
+            ) : (
+              <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200">
+                <Lock className="h-3.5 w-3.5 text-slate-400" />
+                <span>{language === 'ar' ? 'إضافة الأعضاء محصورة بالمالك (الفاوندر)' : 'Member addition restricted to Owner'}</span>
+              </div>
             )}
           </div>
 
-          {!isSuperAdmin && (
+          {!isAdminOrOwner && (
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 flex items-center gap-2">
               <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
               <span>
@@ -735,6 +751,120 @@ export const RbacSettingsView: React.FC = () => {
       {/* Visual Asset Customizer Tab */}
       {activeTab === 'assets' && <AssetCustomizerView />}
 
+      {/* Persistent Supabase Audit Logs Tab */}
+      {activeTab === 'audit_logs' && (
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                    <History className="h-4 w-4 text-emerald-600" />
+                    <span>{language === 'ar' ? 'سجل التدقيق الأمني المباشر (Supabase Audit Logs)' : 'Supabase Realtime Audit Logs'}</span>
+                  </h3>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    {language === 'ar' ? 'PostgreSQL Triggers نشطة' : 'Triggers Active'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  {language === 'ar'
+                    ? 'يتم التقاط وحفظ كافة التغييرات الحساسة (تغيير الأدوار وحذف المهام) تلقائياً عبر Database Triggers في جدول public.audit_logs.'
+                    : 'All critical administrative actions (role updates, task deletions) are captured atomically via PostgreSQL triggers.'}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="rounded-lg bg-slate-100 px-3 py-1 text-xs font-mono font-bold text-slate-700">
+                  {activityLogs.length} {language === 'ar' ? 'حدث مسجل' : 'events'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(activityLogs, null, 2));
+                    const dl = document.createElement('a');
+                    dl.setAttribute('href', dataStr);
+                    dl.setAttribute('download', `supabase-audit-logs-${new Date().toISOString().slice(0, 10)}.json`);
+                    document.body.appendChild(dl);
+                    dl.click();
+                    dl.remove();
+                  }}
+                  className="btn-interactive flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 shadow-2xs"
+                >
+                  <History className="h-3 w-3" />
+                  {language === 'ar' ? 'تصدير السجل' : 'Export JSON'}
+                </button>
+              </div>
+            </div>
+
+            {activityLogs.length === 0 ? (
+              <div className="py-12 text-center text-slate-400 text-xs">
+                {language === 'ar' ? 'لا توجد أحداث تدقيق أمني مسجلة حتى الآن.' : 'No audit entries recorded yet.'}
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100 mt-3">
+                {activityLogs.map((log) => {
+                  const isRoleChange = log.action === 'user.role_updated' || log.entityType === 'role';
+                  const isTaskDeletion = log.action === 'task.deleted' || log.action.includes('حذف');
+                  const isUserCreation = log.action === 'user.created' || log.entityType === 'member';
+
+                  return (
+                    <div key={log.id} className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-slate-50/60 p-2 rounded-xl transition-colors">
+                      <div className="flex items-start gap-3">
+                        <div
+                          className={`mt-0.5 flex h-7 w-7 items-center justify-center rounded-lg text-xs font-bold shrink-0 ${
+                            isRoleChange
+                              ? 'bg-purple-100 text-purple-700'
+                              : isTaskDeletion
+                              ? 'bg-rose-100 text-rose-700'
+                              : isUserCreation
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : 'bg-blue-100 text-blue-700'
+                          }`}
+                        >
+                          {isRoleChange ? '👑' : isTaskDeletion ? '🗑️' : isUserCreation ? '👤' : '⚡'}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-slate-900">
+                              {log.userName || log.userId}
+                            </span>
+                            <span
+                              className={`rounded px-1.5 py-0.2 text-[10px] font-mono font-bold ${
+                                isRoleChange
+                                  ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                                  : isTaskDeletion
+                                  ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                                  : 'bg-slate-100 text-slate-700'
+                              }`}
+                            >
+                              {log.action}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-600 mt-0.5">
+                            {log.actionAr || log.action}:{' '}
+                            <strong className="text-slate-800">{log.entityName}</strong>
+                          </p>
+                          {log.details && (
+                            <p className="mt-1 font-mono text-[10px] text-slate-500 bg-slate-50 p-1 rounded border border-slate-200/60 max-w-xl truncate">
+                              {log.details}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="text-end shrink-0">
+                        <span className="text-[10px] font-mono text-slate-400">{log.createdAt}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Add Custom Role Modal */}
       {isAddRoleOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
@@ -825,8 +955,8 @@ export const RbacSettingsView: React.FC = () => {
         </div>
       )}
 
-      {/* Add User Modal (Exclusively restricted to Owner and Management) */}
-      {isAddUserOpen && (
+      {/* Add User Modal (Exclusively restricted to Owner / Shal Founder) */}
+      {isAddUserOpen && isOwner && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl animate-in fade-in duration-150 border border-[#BDAF9C]/30">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
@@ -839,7 +969,7 @@ export const RbacSettingsView: React.FC = () => {
                     {language === 'ar' ? 'إضافة موظف جديد واعتماد حسابه' : 'Provision Team Member Account'}
                   </h3>
                   <p className="text-[10px] text-slate-500">
-                    {language === 'ar' ? 'خاص بالمالك (الفاوندر) وإدارة العمليات' : 'Owner & Management Exclusive'}
+                    {language === 'ar' ? 'خاص بالمالك (الفاوندر) حصرياً' : 'Owner Exclusive'}
                   </p>
                 </div>
               </div>
