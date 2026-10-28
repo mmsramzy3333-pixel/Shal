@@ -12,6 +12,10 @@ import {
   ExternalLink,
   Users,
   LogOut,
+  Clock,
+  AlertTriangle,
+  CheckSquare,
+  Zap,
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -31,6 +35,8 @@ export const Header: React.FC<HeaderProps> = ({
     notifications,
     markNotificationAsRead,
     markAllNotificationsAsRead,
+    checkApproachingDeadlines,
+    showToast,
     language,
     setActiveTab,
     logout,
@@ -279,8 +285,12 @@ export const Header: React.FC<HeaderProps> = ({
               <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
                 <div className="flex items-center gap-1.5">
                   <h4 className="text-xs font-bold text-slate-800">
-                    {language === 'ar' ? 'مركز الإشعارات' : 'Notifications'}
+                    {language === 'ar' ? 'مركز التنبيهات الفورية' : 'Realtime Notifications'}
                   </h4>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200/60 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-ping" />
+                    Supabase
+                  </span>
                   {unreadCount > 0 && (
                     <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-600">
                       {unreadCount} {language === 'ar' ? 'جديد' : 'new'}
@@ -297,31 +307,98 @@ export const Header: React.FC<HeaderProps> = ({
                 )}
               </div>
 
+              {/* Quick Action: Check Approaching Deadlines */}
+              <div className="mt-2 flex items-center justify-between bg-[#FAF7F2] border border-[#BDAF9C]/30 rounded-xl px-2.5 py-1.5 text-[11px]">
+                <span className="text-slate-600 font-medium flex items-center gap-1.5">
+                  <Clock className="h-3.5 w-3.5 text-amber-600" />
+                  {language === 'ar' ? 'مراقبة المواعيد النهائية (Due Dates)' : 'Deadlines Monitoring'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const res = checkApproachingDeadlines(false);
+                    showToast({
+                      type: 'info',
+                      title: 'فحص المواعيد الحرجة',
+                      message: `تم فحص ${res.checkedCount} مهمة، وتحديد ${res.warningsCount} تنبيهات حرجة.`,
+                    });
+                  }}
+                  className="rounded-lg bg-white border border-[#BDAF9C]/40 px-2 py-0.5 text-[10px] font-bold text-[#4C5540] hover:bg-[#4C5540] hover:text-white transition-all cursor-pointer shadow-2xs"
+                >
+                  {language === 'ar' ? 'فحص الآن' : 'Check Now'}
+                </button>
+              </div>
+
               <div className="mt-2.5 max-h-72 overflow-y-auto space-y-1.5">
                 {userNotifications.length === 0 ? (
-                  <p className="text-center py-6 text-xs text-slate-400">
-                    {language === 'ar' ? 'لا توجد إشعارات حالياً' : 'No notifications'}
-                  </p>
+                  <div className="text-center py-6">
+                    <Bell className="h-7 w-7 text-slate-300 mx-auto mb-1.5 opacity-60" />
+                    <p className="text-xs text-slate-400">
+                      {language === 'ar' ? 'لا توجد إشعارات حالياً' : 'No notifications'}
+                    </p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">
+                      {language === 'ar' ? 'ستصلك التنبيهات فور إسناد أي مهمة جديدة أو اقتراب موعد التسليم' : 'You will be notified in real-time when tasks are assigned or due'}
+                    </p>
+                  </div>
                 ) : (
-                  userNotifications.map((notif) => (
-                    <div
-                      key={notif.id}
-                      onClick={() => {
-                        markNotificationAsRead(notif.id);
-                        if (notif.linkTab) setActiveTab(notif.linkTab);
-                        setShowNotifications(false);
-                      }}
-                      className={`dropdown-item-interactive p-3 rounded-xl text-xs transition-all cursor-pointer ${
-                        notif.isRead
-                          ? 'bg-slate-50/70 text-slate-600 hover:bg-slate-100'
-                          : 'bg-emerald-50/70 border border-emerald-100 text-slate-900 font-medium hover:bg-emerald-100/70'
-                      }`}
-                    >
-                      <p className="font-bold text-xs">{notif.title}</p>
-                      <p className="text-[11px] text-slate-500 mt-0.5">{notif.message}</p>
-                      <span className="text-[9px] text-slate-400 block mt-1">{notif.createdAt}</span>
-                    </div>
-                  ))
+                  userNotifications.map((notif) => {
+                    const isDeadline = notif.type === 'deadline_warning';
+                    const isTaskAssigned = notif.type === 'task_assigned';
+
+                    return (
+                      <div
+                        key={notif.id}
+                        onClick={() => {
+                          markNotificationAsRead(notif.id);
+                          if (notif.linkTab) setActiveTab(notif.linkTab);
+                          setShowNotifications(false);
+                        }}
+                        className={`dropdown-item-interactive p-2.5 rounded-xl text-xs transition-all cursor-pointer border ${
+                          notif.isRead
+                            ? 'bg-slate-50/60 border-slate-100 text-slate-600 hover:bg-slate-100'
+                            : isDeadline
+                            ? 'bg-amber-50/80 border-amber-200 text-slate-900 font-medium hover:bg-amber-100/80'
+                            : 'bg-emerald-50/80 border-emerald-200 text-slate-900 font-medium hover:bg-emerald-100/80'
+                        }`}
+                      >
+                        <div className="flex items-start gap-2">
+                          <div
+                            className={`p-1.5 rounded-lg shrink-0 mt-0.5 ${
+                              isDeadline
+                                ? 'bg-amber-100 text-amber-700'
+                                : isTaskAssigned
+                                ? 'bg-emerald-100 text-emerald-700'
+                                : 'bg-slate-100 text-slate-600'
+                            }`}
+                          >
+                            {isDeadline ? (
+                              <Clock className="h-3.5 w-3.5" />
+                            ) : isTaskAssigned ? (
+                              <CheckSquare className="h-3.5 w-3.5" />
+                            ) : (
+                              <Bell className="h-3.5 w-3.5" />
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-1">
+                              <p className="font-bold text-xs truncate">{notif.title}</p>
+                              {isDeadline ? (
+                                <span className="rounded bg-amber-200/80 text-amber-900 px-1 py-0.2 text-[9px] font-bold shrink-0">
+                                  {language === 'ar' ? 'موعد تسليم' : 'Deadline'}
+                                </span>
+                              ) : isTaskAssigned ? (
+                                <span className="rounded bg-emerald-200/80 text-emerald-900 px-1 py-0.2 text-[9px] font-bold shrink-0">
+                                  {language === 'ar' ? 'مهمة مسندة' : 'Assigned'}
+                                </span>
+                              ) : null}
+                            </div>
+                            <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-2">{notif.message}</p>
+                            <span className="text-[9px] text-slate-400 block mt-1">{notif.createdAt}</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
                 )}
               </div>
             </div>

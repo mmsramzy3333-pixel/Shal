@@ -542,6 +542,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <LogOut className="h-3.5 w-3.5 text-rose-600" />
             <span>{language === 'ar' ? 'تسجيل الخروج الآمن' : 'Sign Out'}</span>
           </button>
+
+          {/* Permanent Copyright & Certified Agency Seal */}
+          <div className="pt-2 border-t border-[#BDAF9C]/30 flex items-center justify-between text-[10px] text-slate-500 px-1">
+            <span className="font-bold text-[#24291F] tracking-tight">Shal Agency © 2024-2026</span>
+            <span className="rounded-md bg-[#4C5540]/10 text-[#4C5540] px-1.5 py-0.5 font-bold font-mono text-[9px] border border-[#4C5540]/25">
+              Verified IP
+            </span>
+          </div>
         </div>
       </aside>
     </>

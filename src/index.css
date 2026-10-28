@@ -493,3 +493,73 @@ button:not(:disabled):not([data-static="true"]):active {
 ::-webkit-scrollbar-thumb:hover {
   background: #8A927D;
 }
+
+/* ==============================================================================
+   5. ADVANCED INTERACTIVE ANIMATIONS & IMMUTABLE BRAND WATERMARK SYSTEM
+   ============================================================================== */
+
+@keyframes shimmerSweep {
+  0% {
+    transform: translateX(-150%) skewX(-20deg);
+  }
+  100% {
+    transform: translateX(250%) skewX(-20deg);
+  }
+}
+
+.shimmer-active {
+  position: relative;
+  overflow: hidden;
+}
+.shimmer-active::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.25), transparent);
+  animation: shimmerSweep 3.5s infinite ease-in-out;
+  pointer-events: none;
+}
+
+/* Spring modal enter */
+@keyframes modalZoomFade {
+  0% {
+    opacity: 0;
+    transform: scale(0.94) translateY(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+.modal-animated-enter {
+  animation: modalZoomFade 0.24s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Kanban card lively hover */
+.kanban-task-card {
+  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.22s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.22s ease;
+  transform: translateZ(0);
+}
+.kanban-task-card:hover {
+  transform: translateY(-3px) scale(1.01);
+  box-shadow: 0 10px 24px -4px rgba(36, 41, 31, 0.12), 0 3px 8px -1px rgba(36, 41, 31, 0.06);
+  border-color: #8A927D;
+}
+
+/* Table row interactive transition */
+.table-row-lively {
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.table-row-lively:hover {
+  background-color: rgba(76, 85, 64, 0.05);
+  transform: translateX(-2px);
+}
+
+/* Permanent Digital Asset Watermark Pattern */
+.shal-protection-watermark {
+  background-image: radial-gradient(rgba(76, 85, 64, 0.04) 1px, transparent 1px);
+  background-size: 24px 24px;
+}

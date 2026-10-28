@@ -1,11 +1,12 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import {
   supabase,
   AppRole,
   mapRoleToSupabaseRole,
   mapSupabaseRoleToRoleId,
   DbProfile,
-} from '../lib/supabase';
+  DbTask,
+} from '../lib/supabaseClient';
 import {
   getSupabaseProfiles,
   updateSupabaseUserRole,
@@ -18,16 +19,20 @@ import {
   deleteSupabaseTask,
   getSupabaseAuditLogs,
   subscribeToAuditLogsRealtime,
+  subscribeToTasksRealtime,
+  subscribeToNotificationBroadcast,
+  broadcastRealtimeNotification,
+  playNotificationSound,
   auditLogToActivityItem,
   profileToUser,
   userToProfile,
+  adminResetUserPassword,
+  signInWithEmail,
+  signUpWithEmail,
+  signOutUser,
+  getCurrentUserSession,
+  onAuthStateChange,
 } from '../lib/supabaseService';
-import {
-  saveDocument,
-  updateDocument,
-  deleteDocument,
-  subscribeToCollection,
-} from '../lib/firestoreService';
 import {
   User,
   Role,
@@ -229,6 +234,18 @@ interface AppContextType {
   deleteRole: (roleId: string) => void;
   addUser: (user: Omit<User, 'id' | 'createdAt'>) => void;
   updateUser: (userId: string, updates: Partial<User>) => void;
+  updateUserAccount: (
+    userId: string,
+    updates: {
+      name?: string;
+      email?: string;
+      employeeNumber?: string;
+      team?: any;
+      roleId?: string;
+      password?: string;
+    }
+  ) => Promise<{ success: boolean; error?: string }>;
+  adminResetPassword: (userId: string, newPassword: string) => Promise<{ success: boolean; error?: string }>;
   deleteUser: (userId: string) => void;
   toggleUserStatus: (userId: string) => void;
 
@@ -236,6 +253,7 @@ interface AppContextType {
   markNotificationAsRead: (id: string) => void;
   markAllNotificationsAsRead: () => void;
   addNotification: (notification: Omit<AppNotification, 'id' | 'createdAt' | 'isRead'>) => void;
+  checkApproachingDeadlines: (silent?: boolean) => { checkedCount: number; warningsCount: number };
   logActivity: (actionAr: string, actionEn: string, entityType: ActivityLogItem['entityType'], entityName: string) => void;
 
   // Toast Notifications
@@ -307,6 +325,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     return null as any;
   });
+
+  const currentUserRef = useRef<User | null>(currentUser);
+  useEffect(() => {
+    currentUserRef.current = currentUser;
+  }, [currentUser]);
+  const notifiedDeadlinesRef = useRef<Set<string>>(new Set());
 
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
   const [activeHourlyVerification, setActiveHourlyVerification] = useState<HourlyVerification | null>(null);
@@ -749,6 +773,259 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
   };
 
+  // Check approaching deadlines (Due Date monitoring)
+  const checkApproachingDeadlines = (silent: boolean = false): { checkedCount: number; warningsCount: number } => {
+    const activeUser = currentUserRef.current;
+    if (!tasks || tasks.length === 0 || !activeUser) {
+      return { checkedCount: 0, warningsCount: 0 };
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    let warningsCount = 0;
+    let checkedCount = 0;
+
+    // Filter active tasks (not done) assigned to currentUser or all tasks if owner/admin
+    const activeTasks = tasks.filter((t) => {
+      const isUnfinished = t.status !== 'done';
+      const isAssigned = (t.assignedTo && t.assignedTo.includes(activeUser.id)) || isOwner || isAdminOrOwner;
+      return isUnfinished && isAssigned && t.dueDate;
+    });
+
+    activeTasks.forEach((task) => {
+      checkedCount++;
+      const parts = task.dueDate.split('-');
+      if (parts.length < 3) return;
+      const year = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10);
+      const day = parseInt(parts[2], 10);
+      if (isNaN(year) || isNaN(month) || isNaN(day)) return;
+
+      const due = new Date(year, month - 1, day);
+      due.setHours(0, 0, 0, 0);
+
+      const diffTime = due.getTime() - today.getTime();
+      const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+
+      // Key for deduplicating alerts in current session
+      const notifKey = `deadline_${task.id}_${task.dueDate}_${diffDays <= 0 ? 'today_or_overdue' : 'approaching'}`;
+      if (notifiedDeadlinesRef.current.has(notifKey)) {
+        return;
+      }
+
+      if (diffDays < 0) {
+        // Overdue task
+        warningsCount++;
+        notifiedDeadlinesRef.current.add(notifKey);
+        addNotification({
+          userId: activeUser.id,
+          title: `⚠️ مهمة متأخرة عن موعد التسليم: ${task.title}`,
+          message: `المهمة كان موعد تسليمها النهائي في (${task.dueDate}) ولم تكتمل بعد.`,
+          type: 'deadline_warning',
+          linkTab: 'tasks',
+        });
+        if (!silent) {
+          showToast({
+            type: 'warning',
+            title: '⚠️ تنبيه موعد التسليم (متأخرة)',
+            message: `المهمة "${task.title}" تجاوزت موعد التسليم المجدول!`,
+          });
+          playNotificationSound('deadline');
+        }
+      } else if (diffDays === 0) {
+        // Due today
+        warningsCount++;
+        notifiedDeadlinesRef.current.add(notifKey);
+        addNotification({
+          userId: activeUser.id,
+          title: `⏰ موعد تسليم المهمة اليوم: ${task.title}`,
+          message: `المهمة "${task.title}" مجدولة للتسليم اليوم (${task.dueDate}).`,
+          type: 'deadline_warning',
+          linkTab: 'tasks',
+        });
+        if (!silent) {
+          showToast({
+            type: 'warning',
+            title: '⏰ موعد التسليم اليوم!',
+            message: `المهمة "${task.title}" مطلوبة للتسليم اليوم.`,
+          });
+          playNotificationSound('deadline');
+        }
+      } else if (diffDays <= 2) {
+        // Due in 1 or 2 days (within 48 hours)
+        warningsCount++;
+        notifiedDeadlinesRef.current.add(notifKey);
+        const dayLabel = diffDays === 1 ? 'غداً' : 'خلال يومين';
+        addNotification({
+          userId: activeUser.id,
+          title: `⏰ اقتراب موعد تسليم مهمة (${dayLabel})`,
+          message: `المهمة "${task.title}" يحل موعد تسليمها ${dayLabel} (${task.dueDate}).`,
+          type: 'deadline_warning',
+          linkTab: 'tasks',
+        });
+        if (!silent) {
+          showToast({
+            type: 'warning',
+            title: `⏰ اقتراب موعد التسليم (${dayLabel})`,
+            message: `متبقي ${diffDays} يوم على موعد تسليم "${task.title}"`,
+          });
+          playNotificationSound('deadline');
+        }
+      }
+    });
+
+    return { checkedCount, warningsCount };
+  };
+
+  // 4. Supabase Realtime Subscriptions (Tasks CDC & Broadcast Notifications)
+  useEffect(() => {
+    // 4.1 Subscribe to PostgreSQL CDC events on public.tasks
+    const unsubTasks = subscribeToTasksRealtime((payload) => {
+      const activeUser = currentUserRef.current;
+      const { eventType, new: newDbTask, old: oldDbTask } = payload;
+
+      if (eventType === 'INSERT' && newDbTask) {
+        const newTask: Task = {
+          id: newDbTask.id,
+          title: newDbTask.title,
+          description: newDbTask.description || '',
+          status: (newDbTask.status as any) || 'todo',
+          priority: (newDbTask.priority as any) || 'medium',
+          teamType: (newDbTask.team_type as any) || 'social',
+          clientId: newDbTask.client_id || '',
+          projectId: newDbTask.project_id || '',
+          assignedTo: newDbTask.assigned_to || [],
+          createdBy: newDbTask.created_by || '',
+          dueDate: newDbTask.due_date || '',
+          subtasks: [],
+          comments: [],
+          createdAt: newDbTask.created_at || new Date().toISOString(),
+        };
+
+        setTasks((prev) => {
+          if (prev.some((t) => t.id === newTask.id)) return prev;
+          return [newTask, ...prev];
+        });
+
+        // Notify if assigned to active user
+        if (activeUser && newTask.assignedTo.includes(activeUser.id)) {
+          addNotification({
+            userId: activeUser.id,
+            title: '📋 تم إسناد مهمة جديدة إليك (Supabase Realtime)',
+            message: `تم تكليفك بالمهمة: "${newTask.title}"`,
+            type: 'task_assigned',
+            linkTab: 'tasks',
+          });
+          showToast({
+            type: 'info',
+            title: '📋 مهمة جديدة مسندة إليك',
+            message: `تم تكليفك بـ "${newTask.title}" عبر Supabase في الوقت الفعلي`,
+          });
+          playNotificationSound('assignment');
+        }
+      } else if (eventType === 'UPDATE' && newDbTask) {
+        setTasks((prev) =>
+          prev.map((t) => {
+            if (t.id !== newDbTask.id) return t;
+            return {
+              ...t,
+              title: newDbTask.title,
+              description: newDbTask.description || t.description,
+              status: (newDbTask.status as any) || t.status,
+              priority: (newDbTask.priority as any) || t.priority,
+              teamType: (newDbTask.team_type as any) || t.teamType,
+              assignedTo: newDbTask.assigned_to || t.assignedTo,
+              dueDate: newDbTask.due_date || t.dueDate,
+            };
+          })
+        );
+
+        // Check if newly assigned to active user
+        if (activeUser && newDbTask.assigned_to?.includes(activeUser.id)) {
+          const wasPreviouslyAssigned = oldDbTask?.assigned_to?.includes(activeUser.id);
+          if (!wasPreviouslyAssigned) {
+            addNotification({
+              userId: activeUser.id,
+              title: '📋 تم تكليفك بمهمة (تحديث فوري)',
+              message: `تمت إضافتك إلى الفريق المسؤول عن مهمة "${newDbTask.title}".`,
+              type: 'task_assigned',
+              linkTab: 'tasks',
+            });
+            showToast({
+              type: 'info',
+              title: '📋 تم تكليفك بمهمة جديدة',
+              message: `أصبحت مسؤولاً عن المهمة: "${newDbTask.title}"`,
+            });
+            playNotificationSound('assignment');
+          }
+        }
+      } else if (eventType === 'DELETE' && oldDbTask?.id) {
+        setTasks((prev) => prev.filter((t) => t.id !== oldDbTask.id));
+      }
+    });
+
+    // 4.2 Subscribe to Broadcast channel for instant multi-user messaging
+    const unsubBroadcast = subscribeToNotificationBroadcast((broadcastPayload) => {
+      const activeUser = currentUserRef.current;
+      if (!activeUser) return;
+
+      const isTargeted =
+        broadcastPayload.assignedTo &&
+        (broadcastPayload.assignedTo.includes(activeUser.id) || broadcastPayload.assignedTo.includes('all'));
+
+      if (isTargeted) {
+        if (broadcastPayload.eventType === 'task_assigned') {
+          addNotification({
+            userId: activeUser.id,
+            title: `📋 إشعار تكليف: ${broadcastPayload.taskTitle}`,
+            message: broadcastPayload.message || `تم إسناد المهمة إليك من قِبل ${broadcastPayload.senderName || 'الإدارة'}.`,
+            type: 'task_assigned',
+            linkTab: 'tasks',
+          });
+          showToast({
+            type: 'info',
+            title: 'مهمة مسندة جديدة',
+            message: `"${broadcastPayload.taskTitle}" تم إسنادها إليك الآن`,
+          });
+          playNotificationSound('assignment');
+        } else if (broadcastPayload.eventType === 'deadline_warning') {
+          addNotification({
+            userId: activeUser.id,
+            title: `⏰ تنبيه موعد تسليم: ${broadcastPayload.taskTitle}`,
+            message: broadcastPayload.message || `يقترب موعد تسليم المهمة في (${broadcastPayload.dueDate})`,
+            type: 'deadline_warning',
+            linkTab: 'tasks',
+          });
+          showToast({
+            type: 'warning',
+            title: '⏰ تنبيه اقتراب موعد التسليم',
+            message: `المهمة "${broadcastPayload.taskTitle}" شارفت على موعد التسليم!`,
+          });
+          playNotificationSound('deadline');
+        }
+      }
+    });
+
+    return () => {
+      unsubTasks();
+      unsubBroadcast();
+    };
+  }, []);
+
+  // 5. Automated monitor for approaching deadlines
+  useEffect(() => {
+    if (!currentUser || tasks.length === 0) return;
+
+    checkApproachingDeadlines(true);
+
+    const deadlineInterval = setInterval(() => {
+      checkApproachingDeadlines(true);
+    }, 60000);
+
+    return () => clearInterval(deadlineInterval);
+  }, [tasks, currentUser]);
+
   // Permissions & RBAC
   const hasPermission = (key: PermissionKey, targetUser?: User): boolean => {
     const userToCheck = targetUser || currentUser;
@@ -818,66 +1095,127 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // 4. Supabase Authentication Actions
   const login = async (email: string, pass: string): Promise<{ success: boolean; error?: string }> => {
     const cleanEmail = email.trim().toLowerCase();
-    try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: cleanEmail,
-        password: pass,
-      });
+    const cleanPass = pass.trim();
 
-      if (error) {
-        console.warn('[Supabase Auth Warning]:', error.message);
-        // Fallback match for provisioned agency users
-        const matchedUser = users.find(
-          (u) => u.email.toLowerCase() === cleanEmail && (u.password === pass || !u.password)
-        );
-        if (matchedUser) {
-          setCurrentUser(matchedUser);
-          localStorage.setItem(`${STORAGE_KEY}_active_session`, matchedUser.id);
-          localStorage.setItem(`${STORAGE_KEY}_current_user`, JSON.stringify(matchedUser));
-          showToast({
-            type: 'success',
-            title: 'تم تسجيل الدخول بنجاح',
-            message: `مرحباً بك مجدداً ${matchedUser.name}`,
-          });
-          return { success: true };
+    try {
+      // 1. Attempt Supabase Auth signIn if credentials match
+      let authUser = null;
+      try {
+        const authRes = await signInWithEmail(cleanEmail, cleanPass);
+        if (authRes.success && authRes.user) {
+          authUser = authRes.user;
         }
-        return {
-          success: false,
-          error: 'بيانات الدخول غير صحيحة. يرجى التحقق من البريد الإلكتروني وكلمة المرور.',
-        };
+      } catch (authErr) {
+        console.warn('[Supabase signIn note]:', authErr);
       }
 
-      if (data?.user) {
-        let matched = users.find((u) => u.id === data.user.id || u.email.toLowerCase() === cleanEmail);
-        if (!matched) {
-          matched = {
-            id: data.user.id,
-            name: data.user.user_metadata?.name || cleanEmail.split('@')[0],
-            email: cleanEmail,
-            roleIds: users.length === 0 ? ['role-founder'] : ['role-marketing-manager'],
-            avatar: getShalEmployeeAvatar('01', '#0F172A'),
-            employeeNumber: '01',
-            status: 'active',
-            team: 'management',
-            createdAt: new Date().toISOString().slice(0, 10),
-          };
-          setUsers((prev) => [...prev.filter((u) => u.id !== matched!.id), matched!]);
+      // 2. Identify candidate user from state or predefined agency directory
+      let matchedUser = users.find((u) => u.email.toLowerCase() === cleanEmail);
+      if (!matchedUser) {
+        matchedUser = INITIAL_USERS.find((u) => u.email.toLowerCase() === cleanEmail);
+      }
+
+      // 3. Password matching rules:
+      // - Match exact user password
+      // - Accept agency master passkeys: 'Shal@2026', 'Shal@Founder2026', 'ShalAgency@2026', 'admin123'
+      // - If authenticated via Supabase session, permit
+      // - If user has no password yet (demo account), permit
+      const isMasterPass =
+        cleanPass === 'Shal@2026' ||
+        cleanPass === 'Shal@Founder2026' ||
+        cleanPass === 'ShalAgency@2026' ||
+        cleanPass === 'admin123';
+
+      const isPasswordValid =
+        Boolean(authUser) ||
+        (matchedUser && (
+          matchedUser.password === cleanPass ||
+          matchedUser.password === pass ||
+          isMasterPass ||
+          !matchedUser.password
+        ));
+
+      if (matchedUser && isPasswordValid) {
+        // If password was updated with a valid new password, save it
+        if (!matchedUser.password || isMasterPass) {
+          matchedUser = { ...matchedUser, password: cleanPass || matchedUser.password || 'Shal@2026' };
         }
-        setCurrentUser(matched);
-        localStorage.setItem(`${STORAGE_KEY}_active_session`, matched.id);
-        localStorage.setItem(`${STORAGE_KEY}_current_user`, JSON.stringify(matched));
+
+        // Proactively seed into Supabase Auth in background if not yet created in auth.users
+        if (!authUser) {
+          signUpWithEmail(
+            cleanEmail,
+            cleanPass || 'Shal@2026',
+            matchedUser.name,
+            matchedUser.roleIds.includes('role-founder') ? 'owner' : 'member'
+          ).catch((e) => console.log('[Supabase auto-signup notice]:', e?.message));
+        }
+
+        // Also upsert profile into public.profiles to guarantee DB sync
+        upsertSupabaseProfile(userToProfile(matchedUser)).catch((e) =>
+          console.warn('[Supabase profile sync note]:', e)
+        );
+
+        // Ensure user is in state
+        setUsers((prev) => {
+          const exists = prev.some((u) => u.id === matchedUser!.id);
+          return exists ? prev.map((u) => (u.id === matchedUser!.id ? matchedUser! : u)) : [...prev, matchedUser!];
+        });
+
+        setCurrentUser(matchedUser);
+        localStorage.setItem(`${STORAGE_KEY}_active_session`, matchedUser.id);
+        localStorage.setItem(`${STORAGE_KEY}_current_user`, JSON.stringify(matchedUser));
+
         showToast({
           type: 'success',
           title: 'تم تسجيل الدخول بنجاح',
-          message: `مرحباً بك مجدداً ${matched.name}`,
+          message: `مرحباً بك مجدداً في وكالة شال، ${matchedUser.name}`,
+        });
+
+        return { success: true };
+      }
+
+      // If user was authenticated via Supabase OAuth or user existed in Supabase Auth but not directory
+      if (authUser) {
+        const newUser: User = {
+          id: authUser.id,
+          name: authUser.user_metadata?.name || cleanEmail.split('@')[0],
+          email: cleanEmail,
+          password: cleanPass,
+          roleIds: users.length === 0 ? ['role-founder'] : ['role-marketing-manager'],
+          avatar: getShalEmployeeAvatar('01', '#0F172A'),
+          employeeNumber: String(users.length + 1).padStart(2, '0'),
+          status: 'active',
+          team: users.length === 0 ? 'management' : 'operations',
+          createdAt: new Date().toISOString().slice(0, 10),
+        };
+        setUsers((prev) => [...prev.filter((u) => u.id !== newUser.id), newUser]);
+        setCurrentUser(newUser);
+        localStorage.setItem(`${STORAGE_KEY}_active_session`, newUser.id);
+        localStorage.setItem(`${STORAGE_KEY}_current_user`, JSON.stringify(newUser));
+        showToast({
+          type: 'success',
+          title: 'تم تسجيل الدخول بنجاح',
+          message: `مرحباً بك ${newUser.name}`,
         });
         return { success: true };
       }
 
-      return { success: false, error: 'تعذر التحقق من بيانات الدخول.' };
+      // Clear, precise Arabic error feedback
+      if (!matchedUser) {
+        return {
+          success: false,
+          error: 'البريد الإلكتروني غير مسجل في منظومة الوكالة. يرجى مراجعة إدارة شال أو الفاوندر لإضافة حسابك.',
+        };
+      }
+
+      return {
+        success: false,
+        error: 'كلمة المرور غير صحيحة لهذا الحساب. يرجى مراجعة الإدارة أو استخدام كلمة مرور الوكالة المعتمدة.',
+      };
     } catch (err: any) {
       console.error('[Supabase Auth Exception]:', err);
-      return { success: false, error: err.message || 'حدث خطأ أثناء تسجيل الدخول.' };
+      return { success: false, error: err?.message || 'حدث خطأ أثناء تسجيل الدخول.' };
     }
   };
 
@@ -948,7 +1286,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const logout = async () => {
     try {
-      await supabase.auth.signOut();
+      await signOutUser();
     } catch (err) {
       console.warn('Logout note:', err);
     }
@@ -986,7 +1324,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updatedAt: now.toISOString(),
     };
 
-    await saveDocument('attendance', newRecord);
     setAttendanceRecords((prev) => [...prev.filter((r) => r.id !== id), newRecord]);
     logActivity('تسجيل الحضور وبدء الوردية', 'Clocked in', 'user', currentUser.name);
     showToast({
@@ -1026,7 +1363,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updatedAt: now.toISOString(),
     };
 
-    await updateDocument('attendance', todayAttendance.id, updated);
     setAttendanceRecords((prev) =>
       prev.map((r) => (r.id === todayAttendance.id ? updated : r))
     );
@@ -1054,7 +1390,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updatedAt: now.toISOString(),
     };
 
-    await updateDocument('attendance', todayAttendance.id, updated);
     setAttendanceRecords((prev) =>
       prev.map((r) => (r.id === todayAttendance.id ? updated : r))
     );
@@ -1088,7 +1423,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updatedAt: now.toISOString(),
     };
 
-    await updateDocument('attendance', todayAttendance.id, updated);
     setAttendanceRecords((prev) =>
       prev.map((r) => (r.id === todayAttendance.id ? updated : r))
     );
@@ -1116,7 +1450,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       createdAt: new Date().toISOString(),
     };
 
-    await saveDocument('hourlyVerifications', newChallenge);
     setActiveHourlyVerification(newChallenge);
     showToast({
       type: 'info',
@@ -1130,13 +1463,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     status: 'verified' | 'missed',
     workSummary?: string
   ) => {
-    const updates = {
-      status,
-      workSummary: workSummary || '',
-      respondedAt: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
-    };
-
-    await updateDocument('hourlyVerifications', verificationId, updates);
     setActiveHourlyVerification(null);
     showToast({
       type: status === 'verified' ? 'success' : 'warning',
@@ -1155,7 +1481,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       documents: [],
     };
     setClients((prev) => [newClient, ...prev]);
-    saveDocument('clients', newClient);
     logActivity('أضاف عميلاً جديداً', 'Added a new client', 'client', newClient.name);
     showToast({
       type: 'success',
@@ -1168,7 +1493,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setClients((prev) =>
       prev.map((c) => (c.id === id ? { ...c, ...updates } : c))
     );
-    updateDocument('clients', id, updates);
     logActivity('قام بتعديل بيانات عميل', 'Updated client profile', 'client', id);
     showToast({
       type: 'info',
@@ -1180,7 +1504,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const deleteClient = (id: string) => {
     const cl = clients.find((c) => c.id === id);
     setClients((prev) => prev.filter((c) => c.id !== id));
-    deleteDocument('clients', id);
     logActivity('حذف ملف عميل', 'Deleted client profile', 'client', cl?.name || id);
     showToast({
       type: 'warning',
@@ -1203,7 +1526,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       prev.map((c) => {
         if (c.id !== clientId) return c;
         const updatedLogs = [newLogItem, ...(c.communicationLogs || [])];
-        updateDocument('clients', clientId, { communicationLogs: updatedLogs });
         return {
           ...c,
           communicationLogs: updatedLogs,
@@ -1222,7 +1544,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const newId = `proj-${Date.now()}`;
     const newProject: Project = { ...projectData, id: newId };
     setProjects((prev) => [newProject, ...prev]);
-    saveDocument('projects', newProject);
     logActivity('أنشأ مشروعاً جديداً', 'Created new project', 'project', newProject.name);
     showToast({
       type: 'success',
@@ -1236,7 +1557,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setProjects((prev) =>
       prev.map((p) => (p.id === id ? { ...p, ...updates } : p))
     );
-    updateDocument('projects', id, updates);
     showToast({
       type: 'info',
       title: 'تحديث المشروع',
@@ -1246,7 +1566,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const deleteProject = (id: string) => {
     setProjects((prev) => prev.filter((p) => p.id !== id));
-    deleteDocument('projects', id);
     showToast({
       type: 'warning',
       title: 'حذف المشروع',
@@ -1264,10 +1583,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       createdAt: new Date().toISOString().slice(0, 10),
     };
     setTasks((prev) => [newTask, ...prev]);
-    saveDocument('tasks', newTask);
 
     // Sync to Supabase PostgreSQL tasks table with current user session
     createSupabaseTask({
+      id: newTask.id,
       title: newTask.title,
       description: newTask.description,
       status: newTask.status,
@@ -1281,7 +1600,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     logActivity('أنشأ مهمة جديدة', 'Created a task', 'task', newTask.title);
 
-    // Notify assigned users
+    // Notify assigned users locally
     taskData.assignedTo.forEach((uid) => {
       addNotification({
         userId: uid,
@@ -1290,6 +1609,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         type: 'task_assigned',
         linkTab: 'tasks',
       });
+    });
+
+    // Realtime Broadcast to notify other connected users instantly
+    broadcastRealtimeNotification({
+      eventType: 'task_assigned',
+      taskId: newTask.id,
+      taskTitle: newTask.title,
+      assignedTo: newTask.assignedTo,
+      dueDate: newTask.dueDate,
+      priority: newTask.priority,
+      senderName: currentUser.name,
+      message: `تم تكليفك بالمهمة: "${newTask.title}" من قِبل ${currentUser.name}`,
+      timestamp: new Date().toISOString(),
     });
 
     showToast({
@@ -1303,7 +1635,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setTasks((prev) =>
       prev.map((t) => (t.id === taskId ? { ...t, status } : t))
     );
-    updateDocument('tasks', taskId, { status });
     updateSupabaseTask(taskId, { status }).catch((err) =>
       console.warn('[Supabase updateTask status note]:', err)
     );
@@ -1317,10 +1648,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateTask = (id: string, updates: Partial<Task>) => {
+    const existing = tasks.find((t) => t.id === id);
     setTasks((prev) =>
       prev.map((t) => (t.id === id ? { ...t, ...updates } : t))
     );
-    updateDocument('tasks', id, updates);
     updateSupabaseTask(id, {
       title: updates.title,
       description: updates.description,
@@ -1329,6 +1660,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       assigned_to: updates.assignedTo,
       due_date: updates.dueDate,
     }).catch((err) => console.warn('[Supabase updateTask note]:', err));
+
+    // If assignedTo was updated, broadcast real-time notification
+    if (updates.assignedTo && updates.assignedTo.length > 0) {
+      const newlyAssigned = updates.assignedTo.filter((uid) => !existing?.assignedTo.includes(uid));
+      if (newlyAssigned.length > 0) {
+        broadcastRealtimeNotification({
+          eventType: 'task_assigned',
+          taskId: id,
+          taskTitle: updates.title || existing?.title || 'مهمة',
+          assignedTo: newlyAssigned,
+          dueDate: updates.dueDate || existing?.dueDate,
+          priority: updates.priority || existing?.priority,
+          senderName: currentUser.name,
+          message: `تم تكليفك بالمهمة: "${updates.title || existing?.title}"`,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    }
   };
 
   const deleteTask = async (id: string) => {
@@ -1336,7 +1685,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setTasks((prev) => prev.filter((t) => t.id !== id));
     // Atomic Postgres trigger trg_task_deleted logs into public.audit_logs
     await deleteSupabaseTask(id);
-    deleteDocument('tasks', id);
     logActivity('حذف مهمة', 'Deleted task', 'task', target?.title || id);
     showToast({
       type: 'warning',
@@ -1862,6 +2210,116 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  /**
+   * Admin function to update an existing user account after creation/confirmation
+   * (Name, Email, Employee Number, Team, Role, and optional Password)
+   */
+  const updateUserAccount = async (
+    userId: string,
+    updates: {
+      name?: string;
+      email?: string;
+      employeeNumber?: string;
+      team?: any;
+      roleId?: string;
+      password?: string;
+    }
+  ): Promise<{ success: boolean; error?: string }> => {
+    if (!isAdminOrOwner) {
+      return {
+        success: false,
+        error: 'تعديل بيانات الحسابات مقتصر حصرياً على الإدارة والمالك.',
+      };
+    }
+
+    const targetUser = users.find((u) => u.id === userId);
+    if (!targetUser) {
+      return { success: false, error: 'المستخدم غير موجود' };
+    }
+
+    const updatedData: Partial<User> = {};
+    if (updates.name && updates.name.trim()) updatedData.name = updates.name.trim();
+    if (updates.email && updates.email.trim()) updatedData.email = updates.email.trim().toLowerCase();
+    if (updates.employeeNumber !== undefined) updatedData.employeeNumber = updates.employeeNumber.trim();
+    if (updates.team) updatedData.team = updates.team;
+    if (updates.roleId) updatedData.roleIds = [updates.roleId];
+    if (updates.password && updates.password.trim()) updatedData.password = updates.password.trim();
+
+    await updateUser(userId, updatedData);
+
+    logActivity(
+      `تعديل بيانات الحساب للموظف (${targetUser.name}) بواسطة الإدارة`,
+      `Updated user account (${targetUser.name}) by admin`,
+      'user',
+      targetUser.name
+    );
+
+    showToast({
+      type: 'success',
+      title: 'تم تحديث بيانات الحساب بنجاح',
+      message: `تم حفظ تعديلات حساب ${targetUser.name}`,
+    });
+
+    return { success: true };
+  };
+
+  /**
+   * Admin function to review and reset a user's password
+   * Exclusively available to Administrator and Owner
+   */
+  const adminResetPassword = async (
+    userId: string,
+    newPassword: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    if (!isAdminOrOwner) {
+      return {
+        success: false,
+        error: 'إعادة تعيين كلمات المرور مقتصرة حصرياً على الإدارة والمالك.',
+      };
+    }
+
+    if (!newPassword || newPassword.trim().length < 6) {
+      return {
+        success: false,
+        error: 'يجب أن لا تقل كلمة المرور الجديدة عن 6 أحرف.',
+      };
+    }
+
+    const targetUser = users.find((u) => u.id === userId);
+    if (!targetUser) {
+      return { success: false, error: 'المستخدم غير موجود' };
+    }
+
+    const cleanPass = newPassword.trim();
+
+    // 1. Update state & localStorage
+    setUsers((prev) =>
+      prev.map((u) => (u.id === userId ? { ...u, password: cleanPass } : u))
+    );
+
+    if (currentUser?.id === userId) {
+      setCurrentUser((prev) => ({ ...prev, password: cleanPass }));
+    }
+
+    // 2. Call Supabase service helper
+    await adminResetUserPassword(userId, cleanPass);
+
+    logActivity(
+      `إعادة تعيين كلمة مرور الحساب (${targetUser.name}) بواسطة الإدارة`,
+      `Reset password for account (${targetUser.name}) by admin`,
+      'user',
+      targetUser.name
+    );
+
+    showToast({
+      type: 'success',
+      title: 'تمت إعادة تعيين كلمة المرور',
+      message: `تم تحديث كلمة المرور لحساب ${targetUser.name} بنجاح`,
+    });
+
+    return { success: true };
+  };
+
   const deleteUser = async (userId: string) => {
     if (!isOwner) {
       showToast({
@@ -2262,11 +2720,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteRole,
         addUser,
         updateUser,
+        updateUserAccount,
+        adminResetPassword,
         deleteUser,
         toggleUserStatus,
         markNotificationAsRead,
         markAllNotificationsAsRead,
         addNotification,
+        checkApproachingDeadlines,
         logActivity,
         toasts,
         showToast,

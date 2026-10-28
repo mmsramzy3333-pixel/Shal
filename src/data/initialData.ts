@@ -510,8 +510,32 @@ export const INITIAL_ROLE_PERMISSIONS: RolePermissionMapping[] = INITIAL_ROLES.f
   })
 );
 
-// 11 Mahmouds: All named Mahmoud with a distinctive number and company logo avatar temporarily
+// Agency Founder & Authorized Staff Directory
 export const INITIAL_USERS: User[] = [
+  {
+    id: 'user-medhat-founder',
+    name: 'م. مدحت نضال | الفاوندر والمدير العام',
+    email: 'medhat.nabdalwusul@gmail.com',
+    password: 'Shal@Founder2026',
+    roleIds: ['role-founder'],
+    avatar: getShalEmployeeAvatar('00', '#0F172A'),
+    employeeNumber: '00',
+    status: 'active',
+    team: 'management',
+    createdAt: '2024-01-01',
+  },
+  {
+    id: 'user-ramzy-founder',
+    name: 'م. رمزي | الإدارة التنفيذية والشريك المؤسس',
+    email: 'm.m.s.ramzy3333@gmail.com',
+    password: 'Shal@Founder2026',
+    roleIds: ['role-founder'],
+    avatar: getShalEmployeeAvatar('00R', '#1E293B'),
+    employeeNumber: '00-R',
+    status: 'active',
+    team: 'management',
+    createdAt: '2024-01-01',
+  },
   {
     id: 'user-founder',
     name: 'محمود 01 - الفاوندر',

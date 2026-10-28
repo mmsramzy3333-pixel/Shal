@@ -13,6 +13,7 @@ import { ProfileChangeModal } from './components/profile/ProfileChangeModal';
 import { ChatView } from './components/chat/ChatView';
 import { AttendanceView } from './components/attendance/AttendanceView';
 import { LoginPage } from './components/auth/LoginPage';
+import { BrandFooter } from './components/layout/BrandFooter';
 import { ShieldAlert } from 'lucide-react';
 
 const MainLayout: React.FC = () => {
@@ -34,10 +35,13 @@ const MainLayout: React.FC = () => {
 
   if (!currentUser) {
     return (
-      <>
+      <div className="flex flex-col min-h-screen">
         <ToastContainer />
-        <LoginPage />
-      </>
+        <div className="flex-1">
+          <LoginPage />
+        </div>
+        <BrandFooter isFloating={false} />
+      </div>
     );
   }
 
@@ -134,9 +138,12 @@ const MainLayout: React.FC = () => {
         />
 
         {/* Dynamic View Canvas */}
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto pb-10">
           {renderActiveView()}
         </main>
+
+        {/* Persistent Brand Footer & Intellectual Property Documentation */}
+        <BrandFooter isFloating={false} />
       </div>
     </div>
   );

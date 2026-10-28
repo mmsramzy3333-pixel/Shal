@@ -1,3 +1,6 @@
+import dotenv from 'dotenv';
+dotenv.config();
+
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import { createClient } from '@supabase/supabase-js';
@@ -23,117 +26,340 @@ function cleanSupabaseUrl(url?: string): string {
 
 const SUPABASE_URL = cleanSupabaseUrl(process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL);
 const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_DTz901w6j9xCg8RHQeBnjg_kSeZF_Pw';
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || SUPABASE_ANON_KEY;
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-const supabaseServer = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
-  auth: {
-    persistSession: false,
-    autoRefreshToken: false,
-  },
-});
+// Create admin client only if service role key is available
+const supabaseAdmin = SUPABASE_SERVICE_KEY
+  ? createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    })
+  : null;
 
 // Health check endpoint
 app.get('/api/health', (_req, res) => {
   res.json({
     status: 'ok',
     service: 'Shal Agency Supabase OS',
+    adminApiConfigured: Boolean(supabaseAdmin),
     timestamp: new Date().toISOString(),
   });
 });
 
-// Admin Route: Add new team member (RESTRICTED STRICTLY TO OWNER)
+/**
+ * Admin Route: Add new team member (Privileged Account Creation)
+ * Authenticates caller, verifies owner/admin role from public.profiles,
+ * provisions real Supabase Auth account with temp password,
+ * and upserts matching public.profiles record with the canonical Auth UUID.
+ */
 app.post('/api/admin/create-member', async (req, res) => {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'Unauthorized: Missing bearer token' });
+    if (!supabaseAdmin) {
+      return res.status(500).json({
+        error: 'Server misconfiguration: SUPABASE_SERVICE_ROLE_KEY is required to provision team accounts.',
+      });
     }
 
-    const token = authHeader.split(' ')[1];
-    const { data: userData, error: userError } = await supabaseServer.auth.getUser(token);
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Unauthorized: Missing or invalid authorization token' });
+    }
 
+    const token = authHeader.split(' ')[1].trim();
+
+    // Verify caller session using Anon Client
+    const callerClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false },
+      global: { headers: { Authorization: `Bearer ${token}` } },
+    });
+
+    const { data: userData, error: userError } = await callerClient.auth.getUser();
     if (userError || !userData?.user) {
-      return res.status(401).json({ error: 'Invalid authentication session' });
+      return res.status(401).json({ error: 'Unauthorized: Invalid authentication session' });
     }
 
     const callerId = userData.user.id;
 
-    // Check caller's role in public.profiles to verify they are 'owner'
-    const { data: callerProfile, error: profileError } = await supabaseServer
+    // Check caller's role in public.profiles (trusted source)
+    const { data: callerProfile, error: profileError } = await supabaseAdmin
       .from('profiles')
-      .select('role')
+      .select('role, email')
       .eq('id', callerId)
       .maybeSingle();
 
-    const isOwner = callerProfile?.role === 'owner';
+    if (profileError || !callerProfile) {
+      return res.status(403).json({ error: 'Forbidden: Caller profile could not be verified' });
+    }
 
-    // If caller is not owner, reject immediately
-    if (!isOwner) {
+    const isAuthorized = callerProfile.role === 'owner' || callerProfile.role === 'admin';
+    if (!isAuthorized) {
       return res.status(403).json({
-        error: 'Forbidden: Strictly Shal Agency Founder / Owner is authorized to provision new members.',
+        error: 'Forbidden: Strictly Shal Agency Owner or Administrator is authorized to provision accounts.',
       });
     }
 
     const { name, email, password, role = 'member', employeeNumber, team = 'operations' } = req.body;
 
-    if (!name || !email) {
-      return res.status(400).json({ error: 'Name and email are required' });
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      return res.status(400).json({ error: 'Full name is required' });
     }
 
-    // Create user via Supabase admin if service key is available, or create profile
-    let newUserId = '';
-    const tempPassword = password || 'Shal@2026';
+    if (!email || typeof email !== 'string' || !email.includes('@')) {
+      return res.status(400).json({ error: 'Valid email address is required' });
+    }
 
-    const { data: newUser, error: createError } = await supabaseServer.auth.admin.createUser({
-      email,
-      password: tempPassword,
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanName = name.trim();
+    const validRoles = ['owner', 'admin', 'member'];
+
+    if (!validRoles.includes(role)) {
+      return res.status(400).json({ error: `Invalid role. Allowed roles: ${validRoles.join(', ')}` });
+    }
+
+    // Role escalation protection: only owner can create another owner or admin
+    if ((role === 'owner' || role === 'admin') && callerProfile.role !== 'owner') {
+      return res.status(403).json({
+        error: 'Forbidden: Only the Agency Owner can provision administrative or owner roles.',
+      });
+    }
+
+    const userPassword = password && typeof password === 'string' && password.trim().length >= 6
+      ? password.trim()
+      : 'Shal@2026';
+
+    // 1. Create real Supabase Auth user via Admin API
+    const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
+      email: cleanEmail,
+      password: userPassword,
       email_confirm: true,
-      user_metadata: { name, employee_number: employeeNumber, team },
+      user_metadata: {
+        name: cleanName,
+        employee_number: employeeNumber || null,
+        team,
+        role,
+      },
     });
 
-    if (createError) {
-      // If admin API is not enabled (e.g. anon key used as fallback), respond with informative error
-      return res.status(400).json({ error: createError.message });
+    if (createError || !newUser?.user) {
+      return res.status(400).json({ error: createError?.message || 'Failed to create Auth account' });
     }
 
-    newUserId = newUser.user.id;
+    const newUserId = newUser.user.id;
 
-    // Insert user into profiles
-    const { error: insertProfileError } = await supabaseServer.from('profiles').upsert({
-      id: newUserId,
-      name,
-      email,
-      role,
-      employee_number: employeeNumber,
-      team,
-      status: 'active',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    });
+    // 2. Upsert profile linked by canonical Auth user UUID
+    const { error: insertProfileError } = await supabaseAdmin
+      .from('profiles')
+      .upsert({
+        id: newUserId,
+        name: cleanName,
+        email: cleanEmail,
+        role,
+        employee_number: employeeNumber || null,
+        team,
+        status: 'active',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'id' });
 
     if (insertProfileError) {
-      return res.status(500).json({ error: insertProfileError.message });
+      // Rollback Auth user on profile creation failure
+      await supabaseAdmin.auth.admin.deleteUser(newUserId).catch(() => {});
+      return res.status(500).json({ error: `Profile creation failed: ${insertProfileError.message}` });
     }
 
-    // Log administrative action in audit_logs
-    await supabaseServer.from('audit_logs').insert({
+    // 3. Log into audit_logs
+    await supabaseAdmin.from('audit_logs').insert({
       timestamp: new Date().toISOString(),
       actor_id: callerId,
-      actor_email: userData.user.email,
+      actor_email: callerProfile.email || userData.user.email,
       action_type: 'user.created',
       target_resource_id: newUserId,
       target_resource_type: 'profile',
-      new_data: { name, email, role, employeeNumber, team },
-    });
+      new_data: { name: cleanName, email: cleanEmail, role, employeeNumber, team },
+    }).catch(() => {});
 
     return res.status(201).json({
       success: true,
-      userId: newUserId,
-      message: 'Team member created and provisioned successfully.',
+      message: 'User provisioned successfully',
+      user: {
+        id: newUserId,
+        name: cleanName,
+        email: cleanEmail,
+        role,
+        team,
+        employeeNumber,
+        status: 'active',
+      },
     });
   } catch (err: any) {
     console.error('Error creating member:', err);
     return res.status(500).json({ error: err.message || 'Internal server error' });
+  }
+});
+
+/**
+ * Admin Route: Reset employee password (Privileged Password Reset)
+ */
+app.post('/api/admin/reset-password', async (req, res) => {
+  try {
+    if (!supabaseAdmin) {
+      return res.status(500).json({
+        error: 'Server misconfiguration: SUPABASE_SERVICE_ROLE_KEY is required to reset passwords.',
+      });
+    }
+
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Unauthorized: Missing or invalid authorization token' });
+    }
+
+    const token = authHeader.split(' ')[1].trim();
+
+    const callerClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false },
+      global: { headers: { Authorization: `Bearer ${token}` } },
+    });
+
+    const { data: userData, error: userError } = await callerClient.auth.getUser();
+    if (userError || !userData?.user) {
+      return res.status(401).json({ error: 'Unauthorized: Invalid authentication session' });
+    }
+
+    const callerId = userData.user.id;
+
+    const { data: callerProfile, error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .select('role, email')
+      .eq('id', callerId)
+      .maybeSingle();
+
+    if (profileError || !callerProfile) {
+      return res.status(403).json({ error: 'Forbidden: Caller profile verification failed' });
+    }
+
+    const isAuthorized = callerProfile.role === 'owner' || callerProfile.role === 'admin';
+    if (!isAuthorized) {
+      return res.status(403).json({
+        error: 'Forbidden: Strictly Shal Agency Owner or Administrator is authorized to reset passwords.',
+      });
+    }
+
+    const { userId, newPassword } = req.body;
+
+    if (!userId || typeof userId !== 'string') {
+      return res.status(400).json({ error: 'Target user ID is required' });
+    }
+
+    if (!newPassword || typeof newPassword !== 'string' || newPassword.trim().length < 6) {
+      return res.status(400).json({ error: 'New password must be at least 6 characters long' });
+    }
+
+    // Call Admin API to update password in auth.users
+    const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
+      userId,
+      { password: newPassword.trim() }
+    );
+
+    if (updateError) {
+      return res.status(400).json({ error: updateError.message || 'Failed to update user password' });
+    }
+
+    // Record in audit_logs
+    await supabaseAdmin.from('audit_logs').insert({
+      timestamp: new Date().toISOString(),
+      actor_id: callerId,
+      actor_email: callerProfile.email || userData.user.email,
+      action_type: 'user.password_reset',
+      target_resource_id: userId,
+      target_resource_type: 'auth.user',
+      new_data: { reset_by: callerProfile.role },
+    }).catch(() => {});
+
+    return res.status(200).json({
+      success: true,
+      message: 'Password reset successfully',
+    });
+  } catch (err: any) {
+    console.error('Error resetting password:', err);
+    return res.status(500).json({ error: err.message || 'Internal server error' });
+  }
+});
+
+/**
+ * Admin Route: Reconcile existing legacy profile rows with auth.users
+ */
+app.post('/api/admin/reconcile-users', async (req, res) => {
+  try {
+    if (!supabaseAdmin) {
+      return res.status(500).json({ error: 'SUPABASE_SERVICE_ROLE_KEY required' });
+    }
+
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const token = authHeader.split(' ')[1].trim();
+    const callerClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false },
+      global: { headers: { Authorization: `Bearer ${token}` } },
+    });
+
+    const { data: userData, error: userError } = await callerClient.auth.getUser();
+    if (userError || !userData?.user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { data: callerProfile } = await supabaseAdmin
+      .from('profiles')
+      .select('role')
+      .eq('id', userData.user.id)
+      .maybeSingle();
+
+    if (callerProfile?.role !== 'owner') {
+      return res.status(403).json({ error: 'Forbidden: Owner only' });
+    }
+
+    // Fetch all auth users
+    const { data: authUsersData, error: authUsersError } = await supabaseAdmin.auth.admin.listUsers();
+    if (authUsersError) {
+      return res.status(500).json({ error: authUsersError.message });
+    }
+
+    let reconciledCount = 0;
+    for (const u of authUsersData.users) {
+      if (!u.email) continue;
+      const { data: existingProfile } = await supabaseAdmin
+        .from('profiles')
+        .select('*')
+        .eq('email', u.email.toLowerCase())
+        .maybeSingle();
+
+      if (existingProfile && existingProfile.id !== u.id) {
+        // Re-link profile with canonical auth UUID
+        await supabaseAdmin.from('profiles').delete().eq('id', existingProfile.id);
+        await supabaseAdmin.from('profiles').insert({
+          ...existingProfile,
+          id: u.id,
+          updated_at: new Date().toISOString(),
+        });
+        reconciledCount++;
+      } else if (!existingProfile) {
+        await supabaseAdmin.from('profiles').insert({
+          id: u.id,
+          name: u.user_metadata?.name || u.email.split('@')[0],
+          email: u.email.toLowerCase(),
+          role: u.user_metadata?.role || 'member',
+          status: 'active',
+          created_at: u.created_at,
+          updated_at: new Date().toISOString(),
+        });
+        reconciledCount++;
+      }
+    }
+
+    return res.status(200).json({ success: true, reconciledCount });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
   }
 });
 

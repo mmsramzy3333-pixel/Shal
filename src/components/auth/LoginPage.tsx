@@ -148,9 +148,34 @@ export const LoginPage: React.FC = () => {
 
           {/* Feedback Alerts */}
           {errorMessage && (
-            <div className="mb-5 flex items-start gap-2.5 rounded-xl border border-rose-200 bg-rose-50/90 p-3 text-rose-900 animate-in fade-in duration-150">
-              <AlertCircle className="h-4 w-4 text-rose-600 shrink-0 mt-0.5" />
-              <div className="text-xs font-semibold leading-relaxed">{errorMessage}</div>
+            <div className="mb-5 rounded-xl border border-rose-200 bg-rose-50/95 p-3.5 text-rose-900 animate-in fade-in duration-150 space-y-2">
+              <div className="flex items-start gap-2.5">
+                <AlertCircle className="h-4 w-4 text-rose-600 shrink-0 mt-0.5" />
+                <div className="text-xs font-semibold leading-relaxed">{errorMessage}</div>
+              </div>
+              <div className="pt-2 border-t border-rose-200/60 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPassword('Shal@2026');
+                    setErrorMessage(null);
+                  }}
+                  className="rounded-lg bg-white border border-rose-300 px-2.5 py-1 text-[11px] font-bold text-rose-800 hover:bg-rose-100 transition-colors cursor-pointer"
+                >
+                  ⚡ {language === 'ar' ? 'تجربة كلمة مرور الوكالة (Shal@2026)' : 'Try Master Pass (Shal@2026)'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEmail('medhat.nabdalwusul@gmail.com');
+                    setPassword('Shal@Founder2026');
+                    setErrorMessage(null);
+                  }}
+                  className="rounded-lg bg-rose-700 text-white px-2.5 py-1 text-[11px] font-bold hover:bg-rose-800 transition-colors cursor-pointer"
+                >
+                  {language === 'ar' ? 'دخول بحساب الفاوندر' : 'Login as Founder'}
+                </button>
+              </div>
             </div>
           )}
 
@@ -160,6 +185,100 @@ export const LoginPage: React.FC = () => {
               <div className="text-xs font-semibold leading-relaxed">{successMessage}</div>
             </div>
           )}
+
+          {/* Quick Staff Credentials Preset Selector */}
+          <div className="mb-5 rounded-2xl border border-slate-200/90 bg-slate-50/70 p-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] font-bold text-slate-800 flex items-center gap-1.5">
+                <Sparkles className="h-3.5 w-3.5 text-amber-500" />
+                {language === 'ar' ? 'حسابات الدخول السريع المعتمدة (1-Click)' : 'Quick Access Authorized Accounts'}
+              </span>
+              <span className="text-[10px] text-slate-400 font-medium">
+                {language === 'ar' ? 'اضغط للملء المباشر' : 'Tap to fill'}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setEmail('medhat.nabdalwusul@gmail.com');
+                  setPassword('Shal@Founder2026');
+                  setErrorMessage(null);
+                }}
+                className="btn-interactive flex items-center justify-between rounded-xl border border-purple-200 bg-purple-50/60 p-2 text-start hover:bg-purple-100/80 transition-all cursor-pointer shadow-2xs"
+              >
+                <div>
+                  <span className="block text-[11px] font-bold text-purple-900">م. مدحت | الفاوندر</span>
+                  <span className="block text-[9px] text-purple-700 font-mono truncate max-w-[110px]">Founder & CEO</span>
+                </div>
+                <span className="text-[9px] font-mono font-bold text-purple-700 bg-white px-1.5 py-0.5 rounded border border-purple-200">المالك</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setEmail('m.m.s.ramzy3333@gmail.com');
+                  setPassword('Shal@Founder2026');
+                  setErrorMessage(null);
+                }}
+                className="btn-interactive flex items-center justify-between rounded-xl border border-purple-200 bg-purple-50/60 p-2 text-start hover:bg-purple-100/80 transition-all cursor-pointer shadow-2xs"
+              >
+                <div>
+                  <span className="block text-[11px] font-bold text-purple-900">م. رمزي | شريك مؤسس</span>
+                  <span className="block text-[9px] text-purple-700 font-mono truncate max-w-[110px]">Executive Board</span>
+                </div>
+                <span className="text-[9px] font-mono font-bold text-purple-700 bg-white px-1.5 py-0.5 rounded border border-purple-200">المالك</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setEmail('mahmoud01.founder@shal.agency');
+                  setPassword('Shal@Founder2026');
+                  setErrorMessage(null);
+                }}
+                className="btn-interactive flex items-center justify-between rounded-xl border border-slate-200 bg-white p-2 text-start hover:bg-slate-100 transition-all cursor-pointer shadow-2xs"
+              >
+                <div>
+                  <span className="block text-[11px] font-bold text-slate-900">محمود 01 | فاوندر</span>
+                  <span className="block text-[9px] text-slate-500 font-mono">Founder</span>
+                </div>
+                <span className="text-[9px] font-mono text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded font-bold">01</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setEmail('mahmoud04.ops@shal.agency');
+                  setPassword('Shal@Operations2026');
+                  setErrorMessage(null);
+                }}
+                className="btn-interactive flex items-center justify-between rounded-xl border border-slate-200 bg-white p-2 text-start hover:bg-slate-100 transition-all cursor-pointer shadow-2xs"
+              >
+                <div>
+                  <span className="block text-[11px] font-bold text-slate-900">محمود 04 | العمليات</span>
+                  <span className="block text-[9px] text-slate-500 font-mono">Ops Manager</span>
+                </div>
+                <span className="text-[9px] font-mono text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded font-bold">04</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setEmail('mahmoud11.ads@shal.agency');
+                  setPassword('Shal@Media2026');
+                  setErrorMessage(null);
+                }}
+                className="btn-interactive flex items-center justify-between rounded-xl border border-slate-200 bg-white p-2 text-start hover:bg-slate-100 transition-all cursor-pointer shadow-2xs"
+              >
+                <div>
+                  <span className="block text-[11px] font-bold text-slate-900">محمود 11 | ميديا باير</span>
+                  <span className="block text-[9px] text-slate-500 font-mono">Media Buyer</span>
+                </div>
+                <span className="text-[9px] font-mono text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded font-bold">11</span>
+              </button>
+            </div>
+          </div>
 
           {/* Direct Google Sign-In */}
           <div className="mb-4">

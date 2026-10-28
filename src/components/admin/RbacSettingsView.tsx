@@ -41,6 +41,8 @@ export const RbacSettingsView: React.FC = () => {
     deleteRole,
     addUser,
     updateUser,
+    updateUserAccount,
+    adminResetPassword,
     deleteUser,
     profileRequests,
     approveProfileChangeRequest,
@@ -72,6 +74,21 @@ export const RbacSettingsView: React.FC = () => {
   const [userTeam, setUserTeam] = useState<any>('operations');
   const [userRoleId, setUserRoleId] = useState(roles[0]?.id || 'role-founder');
   const [revealedPasswords, setRevealedPasswords] = useState<Record<string, boolean>>({});
+
+  // Edit User modal (Admin / Management)
+  const [userToEdit, setUserToEdit] = useState<User | null>(null);
+  const [editUserName, setEditUserName] = useState('');
+  const [editUserEmail, setEditUserEmail] = useState('');
+  const [editUserEmpNum, setEditUserEmpNum] = useState('');
+  const [editUserTeam, setEditUserTeam] = useState<any>('operations');
+  const [editUserRoleId, setEditUserRoleId] = useState('');
+  const [editUserPassword, setEditUserPassword] = useState('');
+
+  // Admin Reset Password modal
+  const [userToResetPass, setUserToResetPass] = useState<User | null>(null);
+  const [newResetPassword, setNewResetPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
 
   // Rejection note prompt
   const [rejectReqId, setRejectReqId] = useState<string | null>(null);
@@ -607,6 +624,20 @@ export const RbacSettingsView: React.FC = () => {
                           >
                             <Copy className="h-3 w-3" />
                           </button>
+                          {isAdminOrOwner && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setUserToResetPass(user);
+                                setNewResetPassword(user.password || 'Shal@2026');
+                                setShowNewPassword(false);
+                              }}
+                              className="btn-interactive rounded px-1.5 py-0.5 text-[10px] font-bold text-[#4C5540] bg-white border border-[#4C5540]/30 hover:bg-[#4C5540] hover:text-white transition-colors cursor-pointer"
+                              title={language === 'ar' ? 'تغيير وإعادة تعيين كلمة المرور من الإدارة' : 'Reset Password by Admin'}
+                            >
+                              {language === 'ar' ? 'تغيير' : 'Reset'}
+                            </button>
+                          )}
                         </div>
                       </div>
                     )}
@@ -616,23 +647,44 @@ export const RbacSettingsView: React.FC = () => {
                   <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3">
                     <button
                       onClick={() => setCurrentUser(user)}
-                      className="text-xs font-bold text-[#4C5540] hover:text-[#3B4432] flex items-center gap-1"
+                      className="text-xs font-bold text-[#4C5540] hover:text-[#3B4432] flex items-center gap-1 cursor-pointer"
                       title="تجربة النظام بصلاحيات هذا الموظف"
                     >
                       <Sparkles className="h-3 w-3" />
                       {language === 'ar' ? 'تبديل الحساب' : 'Switch'}
                     </button>
 
-                    {canManageMembers && !isCurrent && !isUserSuperAdmin && (
-                      <button
-                        type="button"
-                        onClick={() => setUserToDelete(user)}
-                        className="btn-interactive rounded-lg p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
-                        title={language === 'ar' ? 'حذف المستخدم' : 'Delete Member'}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    )}
+                    <div className="flex items-center gap-1">
+                      {canManageMembers && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setUserToEdit(user);
+                            setEditUserName(user.name);
+                            setEditUserEmail(user.email);
+                            setEditUserEmpNum(user.employeeNumber || '');
+                            setEditUserTeam(user.team || 'operations');
+                            setEditUserRoleId(user.roleIds[0] || roles[0]?.id || 'role-founder');
+                            setEditUserPassword(user.password || '');
+                          }}
+                          className="btn-interactive rounded-lg p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
+                          title={language === 'ar' ? 'تعديل بيانات الحساب' : 'Edit Member Details'}
+                        >
+                          <Edit2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+
+                      {canManageMembers && !isCurrent && !isUserSuperAdmin && (
+                        <button
+                          type="button"
+                          onClick={() => setUserToDelete(user)}
+                          className="btn-interactive rounded-lg p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                          title={language === 'ar' ? 'حذف المستخدم' : 'Delete Member'}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               );
@@ -1294,6 +1346,272 @@ export const RbacSettingsView: React.FC = () => {
                 {language === 'ar' ? 'نعم، حذف الحساب' : 'Delete Member'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit User Account Modal (Admin/Management only) */}
+      {userToEdit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2 text-slate-900">
+                <div className="p-2 rounded-xl bg-blue-50 text-blue-600">
+                  <Edit2 className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">
+                    {language === 'ar' ? 'تعديل بيانات حساب العضو' : 'Edit Member Account'}
+                  </h3>
+                  <p className="text-xs text-slate-500">{userToEdit.email}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setUserToEdit(null)}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                await updateUserAccount(userToEdit.id, {
+                  name: editUserName,
+                  email: editUserEmail,
+                  employeeNumber: editUserEmpNum,
+                  team: editUserTeam,
+                  roleId: editUserRoleId,
+                  password: editUserPassword ? editUserPassword : undefined,
+                });
+                setUserToEdit(null);
+              }}
+              className="mt-4 space-y-3.5"
+            >
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  {language === 'ar' ? 'الاسم الكامل' : 'Full Name'}
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editUserName}
+                  onChange={(e) => setEditUserName(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-900 focus:border-[#4C5540] focus:ring-1 focus:ring-[#4C5540] focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    {language === 'ar' ? 'البريد الإلكتروني' : 'Email Address'}
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    value={editUserEmail}
+                    onChange={(e) => setEditUserEmail(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-900 focus:border-[#4C5540] focus:ring-1 focus:ring-[#4C5540] focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    {language === 'ar' ? 'كود الموظف' : 'Employee ID'}
+                  </label>
+                  <input
+                    type="text"
+                    value={editUserEmpNum}
+                    onChange={(e) => setEditUserEmpNum(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-900 focus:border-[#4C5540] focus:ring-1 focus:ring-[#4C5540] focus:outline-none font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    {language === 'ar' ? 'القسم / الفريق' : 'Department'}
+                  </label>
+                  <select
+                    value={editUserTeam}
+                    onChange={(e) => setEditUserTeam(e.target.value as any)}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-900 focus:border-[#4C5540] focus:ring-1 focus:ring-[#4C5540] focus:outline-none bg-white cursor-pointer"
+                  >
+                    <option value="management">{language === 'ar' ? 'الإدارة العامة' : 'Management'}</option>
+                    <option value="marketing">{language === 'ar' ? 'التسويق' : 'Marketing'}</option>
+                    <option value="sales">{language === 'ar' ? 'المبيعات' : 'Sales'}</option>
+                    <option value="operations">{language === 'ar' ? 'العمليات' : 'Operations'}</option>
+                    <option value="content">{language === 'ar' ? 'المحتوى' : 'Content'}</option>
+                    <option value="social">{language === 'ar' ? 'سوشيال ميديا' : 'Social Media'}</option>
+                    <option value="uiux">{language === 'ar' ? 'تصميم UI/UX' : 'UI/UX Design'}</option>
+                    <option value="developer">{language === 'ar' ? 'البرمجة' : 'Development'}</option>
+                    <option value="seo">{language === 'ar' ? 'سيو (SEO)' : 'SEO'}</option>
+                    <option value="media_buying">{language === 'ar' ? 'ميديا باينج' : 'Media Buying'}</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    {language === 'ar' ? 'الدور الوظيفي والصلاحيات' : 'Assigned Role'}
+                  </label>
+                  <select
+                    value={editUserRoleId}
+                    onChange={(e) => setEditUserRoleId(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-900 focus:border-[#4C5540] focus:ring-1 focus:ring-[#4C5540] focus:outline-none bg-white cursor-pointer"
+                  >
+                    {roles.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {language === 'ar' ? r.nameAr : r.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  {language === 'ar' ? 'تحديث كلمة المرور (اختياري)' : 'New Password (Optional)'}
+                </label>
+                <input
+                  type="text"
+                  placeholder={language === 'ar' ? 'اتركه فارغاً للاحتفاظ بكلمة المرور الحالية' : 'Leave blank to keep current'}
+                  value={editUserPassword}
+                  onChange={(e) => setEditUserPassword(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-900 focus:border-[#4C5540] focus:ring-1 focus:ring-[#4C5540] focus:outline-none font-mono"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setUserToEdit(null)}
+                  className="btn-interactive rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                >
+                  {language === 'ar' ? 'إلغاء' : 'Cancel'}
+                </button>
+                <button
+                  type="submit"
+                  className="btn-shal-primary px-4 py-2 text-xs font-bold rounded-xl cursor-pointer"
+                >
+                  {language === 'ar' ? 'حفظ التعديلات' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Admin Reset Password Modal */}
+      {userToResetPass && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2 text-slate-900">
+                <div className="p-2 rounded-xl bg-amber-50 text-amber-600">
+                  <Key className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">
+                    {language === 'ar' ? 'تغيير كلمة المرور من الإدارة' : 'Admin Password Reset'}
+                  </h3>
+                  <p className="text-xs text-slate-500">{userToResetPass.name}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setUserToResetPass(null)}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="rounded-xl bg-slate-50 border border-slate-200 p-2.5 text-xs text-slate-600">
+              <span className="font-bold block text-slate-800">{userToResetPass.email}</span>
+              <span className="text-[11px] text-slate-500">
+                {language === 'ar'
+                  ? 'بصفتك مسؤول النظام، يمكنك مراجعة وتعيين كلمة مرور جديدة لهذا الحساب فوراً.'
+                  : 'As administrator, you can override and set a new password for this user.'}
+              </span>
+            </div>
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setIsResetting(true);
+                await adminResetPassword(userToResetPass.id, newResetPassword);
+                setIsResetting(false);
+                setUserToResetPass(null);
+              }}
+              className="space-y-3"
+            >
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  {language === 'ar' ? 'كلمة المرور الجديدة' : 'New Password'}
+                </label>
+                <div className="relative">
+                  <input
+                    type={showNewPassword ? 'text' : 'password'}
+                    required
+                    minLength={6}
+                    value={newResetPassword}
+                    onChange={(e) => setNewResetPassword(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 ps-3 pe-10 py-2 text-xs font-mono text-slate-900 focus:border-[#4C5540] focus:ring-1 focus:ring-[#4C5540] focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                    className="absolute top-1/2 -translate-y-1/2 end-3 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Quick generator and preset chips */}
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setNewResetPassword(`Shal@${Math.floor(1000 + Math.random() * 9000)}`)}
+                  className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-bold text-slate-700 hover:bg-slate-100 cursor-pointer"
+                >
+                  ⚡ {language === 'ar' ? 'توليد تلقائي' : 'Auto Generate'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNewResetPassword('Shal@2026')}
+                  className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-bold text-slate-700 hover:bg-slate-100 cursor-pointer"
+                >
+                  Shal@2026
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNewResetPassword('Shal@Founder2026')}
+                  className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-bold text-slate-700 hover:bg-slate-100 cursor-pointer"
+                >
+                  Shal@Founder2026
+                </button>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setUserToResetPass(null)}
+                  className="btn-interactive rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                >
+                  {language === 'ar' ? 'إلغاء' : 'Cancel'}
+                </button>
+                <button
+                  type="submit"
+                  disabled={isResetting || !newResetPassword}
+                  className="btn-shal-primary px-4 py-2 text-xs font-bold rounded-xl cursor-pointer disabled:opacity-60"
+                >
+                  {isResetting ? (language === 'ar' ? 'جارٍ التحديث...' : 'Saving...') : (language === 'ar' ? 'تأكيد التغيير' : 'Reset Password')}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
