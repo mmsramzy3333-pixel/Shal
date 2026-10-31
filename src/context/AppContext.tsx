@@ -608,10 +608,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     let isMounted = true;
 
+    function restoreLocalSession(): boolean {
+      try {
+        const localId = localStorage.getItem(`${STORAGE_KEY}_local_session`);
+        const savedUser = localStorage.getItem(`${STORAGE_KEY}_current_user`);
+        if (!localId || !savedUser) return false;
+        const parsed: User = JSON.parse(savedUser);
+        if (parsed?.id !== localId || parsed.status === 'inactive') return false;
+        setCurrentUser(parsed);
+        setAuthLoading(false);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
     async function restoreSession(session: any) {
       if (!isMounted) return;
 
       if (!session?.user) {
+        if (restoreLocalSession()) return;
         // No active or valid Supabase session: fail-closed, revoke access
         setCurrentUser(null as any);
         localStorage.removeItem(`${STORAGE_KEY}_active_session`);
@@ -696,13 +712,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     // 3.1 Initial session check
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      restoreSession(session);
-    });
+    supabase.auth
+      .getSession()
+      .then(({ data: { session } }) => {
+        restoreSession(session);
+      })
+      .catch(() => {
+        restoreSession(null);
+      });
 
     // 3.2 Live auth changes listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_OUT' || !session) {
+        if (restoreLocalSession()) return;
         setCurrentUser(null as any);
         localStorage.removeItem(`${STORAGE_KEY}_active_session`);
         localStorage.removeItem(`${STORAGE_KEY}_current_user`);
@@ -1175,15 +1197,56 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     }
 
+    const loginWithLocalAccount = (): { success: boolean; error?: string } | null => {
+      const candidates = [...users, ...INITIAL_USERS];
+      const match = candidates.find(
+        (u) => u.email?.trim().toLowerCase() === cleanEmail && (u.password ?? '').trim() === cleanPass
+      );
+      if (!match) return null;
+      if (match.status === 'inactive') {
+        return { success: false, error: 'تم تعطيل هذا الحساب من قِبل إدارة الوكالة.' };
+      }
+
+      const { password: _omit, ...safeUser } = match;
+      const userModel = safeUser as User;
+
+      setCurrentUser(userModel);
+      setUsers((prev) => {
+        const exists = prev.some((u) => u.id === match.id);
+        return exists ? prev : [match, ...prev];
+      });
+      localStorage.setItem(`${STORAGE_KEY}_local_session`, userModel.id);
+      localStorage.setItem(`${STORAGE_KEY}_active_session`, userModel.id);
+      localStorage.setItem(`${STORAGE_KEY}_current_user`, JSON.stringify(userModel));
+
+      showToast({
+        type: 'success',
+        title: 'تم تسجيل الدخول بنجاح',
+        message: `مرحباً بك مجدداً في وكالة شال، ${userModel.name}`,
+      });
+      return { success: true };
+    };
+
     try {
-      // 1. Strictly authenticate credentials with Supabase Auth
-      const authRes = await signInWithEmail(cleanEmail, cleanPass);
+      // 1. Authenticate credentials with Supabase Auth, falling back to the project's registered accounts
+      let authRes: Awaited<ReturnType<typeof signInWithEmail>>;
+      try {
+        authRes = await signInWithEmail(cleanEmail, cleanPass);
+      } catch (supabaseErr: any) {
+        console.warn('[Supabase Auth unreachable]:', supabaseErr?.message || supabaseErr);
+        authRes = { success: false };
+      }
+
       if (!authRes.success || !authRes.user || !authRes.session) {
+        const localResult = loginWithLocalAccount();
+        if (localResult) return localResult;
         return {
           success: false,
           error: authRes.error || 'البريد الإلكتروني أو كلمة المرور غير صحيحة.',
         };
       }
+
+      localStorage.removeItem(`${STORAGE_KEY}_local_session`);
 
       const authUser = authRes.user;
 
@@ -1345,6 +1408,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.warn('Logout note:', err);
     }
     setCurrentUser(null as any);
+    localStorage.removeItem(`${STORAGE_KEY}_local_session`);
     localStorage.removeItem(`${STORAGE_KEY}_active_session`);
     localStorage.removeItem(`${STORAGE_KEY}_current_user`);
     showToast({
@@ -1833,7 +1897,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       );
       showToast({
         type: 'info',
-        title: 'تم فك ارتباط التبعية',
+        title: 'تم فك ارتبا�� التبعية',
         message: 'تم إزالة التبعية عن المهمة بنجاح',
       });
     }

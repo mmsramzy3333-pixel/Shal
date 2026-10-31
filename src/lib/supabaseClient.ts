@@ -13,8 +13,13 @@ export function cleanSupabaseUrl(url?: string): string {
   return cleaned || 'https://tnrtoyibqblajkcsglhb.supabase.co';
 }
 
-const rawEnvUrl: string = (import.meta as any).env?.VITE_SUPABASE_URL || '';
-const rawEnvKey: string = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || '';
+const viteEnv = (import.meta as any).env || {};
+const rawEnvUrl: string = viteEnv.VITE_SUPABASE_URL || viteEnv.NEXT_PUBLIC_SUPABASE_URL || '';
+const rawEnvKey: string =
+  viteEnv.VITE_SUPABASE_ANON_KEY ||
+  viteEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  viteEnv.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+  '';
 
 export const SUPABASE_URL: string = cleanSupabaseUrl(rawEnvUrl);
 export const SUPABASE_ANON_KEY: string =

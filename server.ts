@@ -1,5 +1,5 @@
 import dotenv from 'dotenv';
-dotenv.config();
+dotenv.config({ path: ['.env.development.local', '.env.local', '.env'], quiet: true });
 
 import express from 'express';
 import http from 'http';
@@ -25,8 +25,14 @@ function cleanSupabaseUrl(url?: string): string {
   return cleaned || 'https://tnrtoyibqblajkcsglhb.supabase.co';
 }
 
-const SUPABASE_URL = cleanSupabaseUrl(process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL);
-const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_DTz901w6j9xCg8RHQeBnjg_kSeZF_Pw';
+const SUPABASE_URL = cleanSupabaseUrl(
+  process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
+);
+const SUPABASE_ANON_KEY =
+  process.env.VITE_SUPABASE_ANON_KEY ||
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  process.env.SUPABASE_ANON_KEY ||
+  'sb_publishable_DTz901w6j9xCg8RHQeBnjg_kSeZF_Pw';
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 // Create admin client only if service role key is available
