@@ -668,7 +668,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           } else {
             // New user account: construct clean model from auth metadata
             const defaultRole =
-              email === 'm.m.s.ramzy3333@gmail.com' || email === 'medhat.nabdalwusul@gmail.com'
+              email === 'm.m.s.ramzy3333@gmail.com' ||
+              email === 'medhat.nabdalwusul@gmail.com' ||
+              email === 'founder@shal.agency'
                 ? 'owner'
                 : 'member';
 
@@ -1282,7 +1284,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         } else {
           // Provision initial profile
           const defaultRole: AppRole =
-            cleanEmail === 'm.m.s.ramzy3333@gmail.com' || cleanEmail === 'medhat.nabdalwusul@gmail.com'
+            cleanEmail === 'm.m.s.ramzy3333@gmail.com' ||
+        cleanEmail === 'medhat.nabdalwusul@gmail.com' ||
+        cleanEmail === 'founder@shal.agency'
               ? 'owner'
               : 'member';
 

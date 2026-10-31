@@ -596,7 +596,7 @@ export const RbacSettingsView: React.FC = () => {
             {users.map((user) => {
               const userRolesList = roles.filter((r) => user.roleIds.includes(r.id));
               const isCurrent = user.id === currentUser.id;
-              const isUserSuperAdmin = user.roleIds.includes('role-super-admin') || user.email === 'medhat.nabdalwusul@gmail.com';
+              const isUserSuperAdmin = user.roleIds.includes('role-super-admin') || user.email === 'medhat.nabdalwusul@gmail.com' || user.email === 'founder@shal.agency';
 
               return (
                 <div

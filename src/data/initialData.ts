@@ -513,6 +513,18 @@ export const INITIAL_ROLE_PERMISSIONS: RolePermissionMapping[] = INITIAL_ROLES.f
 // Agency Founder & Authorized Staff Directory
 export const INITIAL_USERS: User[] = [
   {
+    id: 'user-shal-owner',
+    name: 'الفاوندر | مالك وكالة شال',
+    email: 'founder@shal.agency',
+    password: 'ShalOwner@2026!',
+    roleIds: ['role-founder'],
+    avatar: getShalEmployeeAvatar('000', '#0F172A'),
+    employeeNumber: '000',
+    status: 'active',
+    team: 'management',
+    createdAt: '2026-10-31',
+  },
+  {
     id: 'user-medhat-founder',
     name: 'م. مدحت نضال | الفاوندر والمدير العام',
     email: 'medhat.nabdalwusul@gmail.com',
