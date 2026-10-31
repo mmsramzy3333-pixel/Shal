@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { Header } from './components/layout/Header';
 import { Sidebar } from './components/layout/Sidebar';
@@ -8,18 +8,74 @@ import { ClientsView } from './components/crm/ClientsView';
 import { SocialCalendarView } from './components/social/SocialCalendarView';
 import { RbacSettingsView } from './components/admin/RbacSettingsView';
 import { ActivityLogView } from './components/activity/ActivityLogView';
+import { SettingsView } from './components/settings/SettingsView';
 import { ToastContainer } from './components/common/ToastContainer';
 import { ProfileChangeModal } from './components/profile/ProfileChangeModal';
 import { ChatView } from './components/chat/ChatView';
 import { AttendanceView } from './components/attendance/AttendanceView';
+import { ContractsView } from './components/contracts/ContractsView';
+import { ReportsView } from './components/reports/ReportsView';
 import { LoginPage } from './components/auth/LoginPage';
 import { BrandFooter } from './components/layout/BrandFooter';
 import { ShieldAlert } from 'lucide-react';
 
 const MainLayout: React.FC = () => {
-  const { activeTab, hasPermission, language, currentUser, authLoading } = useApp();
+  const {
+    activeTab,
+    setActiveTab,
+    hasPermission,
+    language,
+    currentUser,
+    authLoading,
+    showToast,
+  } = useApp();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+
+  // Global Keyboard Shortcuts Listener (Ctrl+Alt+D, Ctrl+Alt+T, Ctrl+Alt+C, Ctrl+Alt+S)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.altKey) {
+        const key = e.key.toLowerCase();
+        if (key === 'd') {
+          e.preventDefault();
+          setActiveTab('dashboard');
+          showToast({
+            type: 'info',
+            title: language === 'ar' ? 'اختصار لوحة المفاتيح' : 'Keyboard Shortcut',
+            message: language === 'ar' ? 'الانتقال إلى مساحة العمل الرئيسية (Dashboard)' : 'Switched to Dashboard view',
+          });
+        } else if (key === 't') {
+          e.preventDefault();
+          setActiveTab('tasks');
+          showToast({
+            type: 'info',
+            title: language === 'ar' ? 'اختصار لوحة المفاتيح' : 'Keyboard Shortcut',
+            message: language === 'ar' ? 'الانتقال إلى إدارة المهام (Tasks)' : 'Switched to Tasks view',
+          });
+        } else if (key === 'c') {
+          e.preventDefault();
+          setActiveTab('clients');
+          showToast({
+            type: 'info',
+            title: language === 'ar' ? 'اختصار لوحة المفاتيح' : 'Keyboard Shortcut',
+            message: language === 'ar' ? 'الانتقال إلى إدارة العملاء والصفقات (CRM)' : 'Switched to Clients & CRM view',
+          });
+        } else if (key === 's') {
+          e.preventDefault();
+          setActiveTab('social');
+          showToast({
+            type: 'info',
+            title: language === 'ar' ? 'اختصار لوحة المفاتيح' : 'Keyboard Shortcut',
+            message: language === 'ar' ? 'الانتقال إلى تقويم السوشيال ميديا (Social Calendar)' : 'Switched to Social Calendar view',
+          });
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [setActiveTab, showToast, language]);
 
   // Authentication & session validation
   if (authLoading) {
@@ -105,6 +161,15 @@ const MainLayout: React.FC = () => {
 
       case 'activity':
         return <ActivityLogView />;
+
+      case 'contracts':
+        return <ContractsView />;
+
+      case 'reports':
+        return <ReportsView />;
+
+      case 'settings':
+        return <SettingsView />;
 
       default:
         return <DashboardView />;

@@ -167,15 +167,19 @@ app.post('/api/admin/create-member', async (req, res) => {
     }
 
     // 3. Log into audit_logs
-    await supabaseAdmin.from('audit_logs').insert({
-      timestamp: new Date().toISOString(),
-      actor_id: callerId,
-      actor_email: callerProfile.email || userData.user.email,
-      action_type: 'user.created',
-      target_resource_id: newUserId,
-      target_resource_type: 'profile',
-      new_data: { name: cleanName, email: cleanEmail, role, employeeNumber, team },
-    }).catch(() => {});
+    try {
+      await supabaseAdmin.from('audit_logs').insert({
+        timestamp: new Date().toISOString(),
+        actor_id: callerId,
+        actor_email: callerProfile.email || userData.user.email,
+        action_type: 'user.created',
+        target_resource_id: newUserId,
+        target_resource_type: 'profile',
+        new_data: { name: cleanName, email: cleanEmail, role, employeeNumber, team },
+      });
+    } catch {
+      // Non-fatal if audit logging fails
+    }
 
     return res.status(201).json({
       success: true,
@@ -264,15 +268,19 @@ app.post('/api/admin/reset-password', async (req, res) => {
     }
 
     // Record in audit_logs
-    await supabaseAdmin.from('audit_logs').insert({
-      timestamp: new Date().toISOString(),
-      actor_id: callerId,
-      actor_email: callerProfile.email || userData.user.email,
-      action_type: 'user.password_reset',
-      target_resource_id: userId,
-      target_resource_type: 'auth.user',
-      new_data: { reset_by: callerProfile.role },
-    }).catch(() => {});
+    try {
+      await supabaseAdmin.from('audit_logs').insert({
+        timestamp: new Date().toISOString(),
+        actor_id: callerId,
+        actor_email: callerProfile.email || userData.user.email,
+        action_type: 'user.password_reset',
+        target_resource_id: userId,
+        target_resource_type: 'auth.user',
+        new_data: { reset_by: callerProfile.role },
+      });
+    } catch {
+      // Non-fatal if audit logging fails
+    }
 
     return res.status(200).json({
       success: true,

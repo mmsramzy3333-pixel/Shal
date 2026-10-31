@@ -33,6 +33,8 @@ import {
   Flame,
   Image as ImageIcon,
   UserCheck,
+  UserPlus,
+  Lock,
 } from 'lucide-react';
 import { Task, TaskStatus, ChatMessage, UserPresenceStatus } from '../../types';
 
@@ -47,6 +49,7 @@ export const ChatView: React.FC = () => {
     toggleMessageReaction,
     deleteChatMessage,
     togglePinChatMessage,
+    updateChannelMembers,
     markChatAsRead,
     tasks,
     updateTaskStatus,
@@ -95,6 +98,26 @@ export const ChatView: React.FC = () => {
   const [chatCategory, setChatCategory] = useState<'channels' | 'direct'>('channels');
   const [selectedDirectUserId, setSelectedDirectUserId] = useState<string | null>(null);
 
+  // Channel Member Management State (Admin only)
+  const [managingMembersChannel, setManagingMembersChannel] = useState<any | null>(null);
+  const [selectedChannelMembers, setSelectedChannelMembers] = useState<string[]>([]);
+
+  const isManagerOrAdmin =
+    currentUser.role === 'owner' ||
+    currentUser.role === 'admin' ||
+    currentUser.team === 'management' ||
+    currentUserRole?.code === 'founder' ||
+    currentUserRole?.code === 'operations_mgr' ||
+    (currentUser as any).roleIds?.includes('role-founder') ||
+    (currentUser as any).roleIds?.includes('role-operations-manager');
+
+  // Strict channel visibility per user request:
+  // "قنوات الشات متظهرش لي اي موظف او عضو الا عند اضافته من قبل الاداره فقط و فقط القنوات الي تم اضافته فيها هي الي تظهر"
+  const accessibleChannels = chatChannels.filter((channel) => {
+    if (isManagerOrAdmin) return true;
+    return Boolean(channel.allowedMemberIds && channel.allowedMemberIds.includes(currentUser.id));
+  });
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -105,7 +128,7 @@ export const ChatView: React.FC = () => {
 
   // Active channel determination
   const activeChannel =
-    chatChannels.find((c) => c.id === activeChatChannelId) || chatChannels[0];
+    accessibleChannels.find((c) => c.id === activeChatChannelId) || accessibleChannels[0] || chatChannels[0];
 
   // Channel messages filtered
   const channelMessages = chatMessages.filter((msg) => {
@@ -609,7 +632,7 @@ export const ChatView: React.FC = () => {
                 }`}
               >
                 <Hash className="h-3.5 w-3.5" />
-                <span>قنوات الفرق ({chatChannels.length})</span>
+                <span>قنوات الفرق ({accessibleChannels.length})</span>
               </button>
 
               <button
@@ -655,73 +678,103 @@ export const ChatView: React.FC = () => {
           {/* List of Channels or Direct Members */}
           <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5 custom-scrollbar">
             {chatCategory === 'channels' ? (
-              chatChannels.map((channel) => {
-                const isActive = channel.id === activeChatChannelId;
-                const channelMsgCount = chatMessages.filter(
-                  (m) => m.channelId === channel.id
-                ).length;
-                const taskCount = chatMessages.filter(
-                  (m) => m.channelId === channel.id && m.attachedTaskId
-                ).length;
+              accessibleChannels.length === 0 ? (
+                <div className="p-6 text-center text-xs text-slate-500 rounded-xl bg-slate-50 border border-dashed border-slate-200 space-y-2">
+                  <Lock className="h-6 w-6 text-slate-400 mx-auto" />
+                  <p className="font-bold text-slate-700">لم يتم إضافتك لأي قناة بعد</p>
+                  <p className="text-[11px] text-slate-400">طبقاً لتوجيهات الإدارة، تظهر القنوات فقط عند إضافتك رسمياً من قبل الإدارة.</p>
+                </div>
+              ) : (
+                accessibleChannels.map((channel) => {
+                  const isActive = channel.id === activeChatChannelId;
+                  const channelMsgCount = chatMessages.filter(
+                    (m) => m.channelId === channel.id
+                  ).length;
+                  const taskCount = chatMessages.filter(
+                    (m) => m.channelId === channel.id && m.attachedTaskId
+                  ).length;
 
-                return (
-                  <button
-                    key={channel.id}
-                    onClick={() => {
-                      setActiveChatChannelId(channel.id);
-                      markChatAsRead(channel.id);
-                    }}
-                    className={`w-full text-right p-3 rounded-xl transition-all cursor-pointer flex flex-col gap-1 border ${
-                      isActive
-                        ? 'bg-[#4C5540] text-white border-[#4C5540] shadow-sm ring-1 ring-[#4C5540]/30'
-                        : 'bg-white hover:bg-[#E9E1D6]/40 text-[#24291F] border-[#BDAF9C]/20 hover:border-[#BDAF9C]/50'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Hash
-                          className={`h-4 w-4 ${
-                            isActive ? 'text-[#FAF7F2]' : 'text-[#4C5540]'
-                          }`}
-                        />
-                        <span className="text-xs font-bold">{channel.nameAr}</span>
-                      </div>
-
-                      <span
-                        className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${
-                          isActive ? 'bg-white/20 text-white' : 'bg-[#4C5540]/10 text-[#4C5540]'
-                        }`}
-                      >
-                        {channel.team.toUpperCase()}
-                      </span>
-                    </div>
-
-                    <p
-                      className={`text-[11px] line-clamp-1 text-right ${
-                        isActive ? 'text-white/80' : 'text-slate-500'
+                  return (
+                    <div
+                      key={channel.id}
+                      onClick={() => {
+                        setActiveChatChannelId(channel.id);
+                        markChatAsRead(channel.id);
+                      }}
+                      className={`w-full text-right p-3 rounded-xl transition-all cursor-pointer flex flex-col gap-1 border ${
+                        isActive
+                          ? 'bg-[#4C5540] text-white border-[#4C5540] shadow-sm ring-1 ring-[#4C5540]/30'
+                          : 'bg-white hover:bg-[#E9E1D6]/40 text-[#24291F] border-[#BDAF9C]/20 hover:border-[#BDAF9C]/50'
                       }`}
                     >
-                      {channel.descriptionAr}
-                    </p>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Hash
+                            className={`h-4 w-4 ${
+                              isActive ? 'text-[#FAF7F2]' : 'text-[#4C5540]'
+                            }`}
+                          />
+                          <span className="text-xs font-bold">{channel.nameAr}</span>
+                        </div>
 
-                    <div className="flex items-center justify-between pt-1 mt-1 border-t border-current/10 text-[10px]">
-                      <span className={isActive ? 'text-white/75' : 'text-slate-400'}>
-                        {channelMsgCount} رسالة
-                      </span>
-                      {taskCount > 0 && (
-                        <span
-                          className={`inline-flex items-center gap-1 font-bold ${
-                            isActive ? 'text-[#FAF7F2]' : 'text-[#4C5540]'
-                          }`}
-                        >
-                          <Briefcase className="h-3 w-3" />
-                          {taskCount} مهام
+                        <div className="flex items-center gap-1">
+                          {isManagerOrAdmin && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setManagingMembersChannel(channel);
+                                setSelectedChannelMembers(channel.allowedMemberIds || []);
+                              }}
+                              className={`rounded p-1 text-[10px] font-bold flex items-center gap-1 transition-colors ${
+                                isActive
+                                  ? 'bg-white/20 hover:bg-white/30 text-white'
+                                  : 'bg-[#4C5540]/10 hover:bg-[#4C5540]/20 text-[#4C5540]'
+                              }`}
+                              title="إدارة وتحديد أعضاء القناة"
+                            >
+                              <UserPlus className="h-3 w-3" />
+                              <span>الأعضاء</span>
+                            </button>
+                          )}
+
+                          <span
+                            className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${
+                              isActive ? 'bg-white/20 text-white' : 'bg-[#4C5540]/10 text-[#4C5540]'
+                            }`}
+                          >
+                            {channel.team.toUpperCase()}
+                          </span>
+                        </div>
+                      </div>
+
+                      <p
+                        className={`text-[11px] line-clamp-1 text-right ${
+                          isActive ? 'text-white/80' : 'text-slate-500'
+                        }`}
+                      >
+                        {channel.descriptionAr}
+                      </p>
+
+                      <div className="flex items-center justify-between pt-1 mt-1 border-t border-current/10 text-[10px]">
+                        <span className={isActive ? 'text-white/75' : 'text-slate-400'}>
+                          {channelMsgCount} رسالة
                         </span>
-                      )}
+                        {taskCount > 0 && (
+                          <span
+                            className={`inline-flex items-center gap-1 font-bold ${
+                              isActive ? 'text-[#FAF7F2]' : 'text-[#4C5540]'
+                            }`}
+                          >
+                            <Briefcase className="h-3 w-3" />
+                            {taskCount} مهام
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  </button>
-                );
-              })
+                  );
+                })
+              )
             ) : (
               // Direct messages user list with Online/Offline/Busy presence indicator
               users
@@ -1468,6 +1521,99 @@ export const ChatView: React.FC = () => {
                   <span className="text-[10px] text-slate-500">1.1 MB · ملف مستندات</span>
                 </div>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Manage Channel Members Modal (Admin / Management Only) */}
+      {managingMembersChannel && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-[#181D18] p-6 shadow-2xl border border-slate-200 dark:border-[#2D372B] space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-[#2D372B] pb-3">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-xl bg-[#4C5540]/10 text-[#4C5540] dark:text-[#A4C08B]">
+                  <Users className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                    إدارة أعضاء القناة: {managingMembersChannel.nameAr}
+                  </h3>
+                  <p className="text-[11px] text-slate-500 dark:text-[#BDAF9C]">
+                    حدد الأعضاء المصرح لهم برؤية القناة والتفاعل بها
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setManagingMembersChannel(null)}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-[#2A3428]"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="max-h-60 overflow-y-auto space-y-2 pr-1 custom-scrollbar text-xs">
+              {users.map((member) => {
+                const isChecked = selectedChannelMembers.includes(member.id);
+                return (
+                  <label
+                    key={member.id}
+                    className={`flex items-center justify-between p-2.5 rounded-xl border transition-all cursor-pointer ${
+                      isChecked
+                        ? 'border-[#4C5540] bg-[#FAF7F2] dark:bg-[#1E251D] text-[#24291F] dark:text-white font-bold'
+                        : 'border-slate-200 dark:border-[#2D372B] hover:bg-slate-50 dark:hover:bg-[#151A14] text-slate-700 dark:text-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedChannelMembers((prev) => [...prev, member.id]);
+                          } else {
+                            setSelectedChannelMembers((prev) => prev.filter((id) => id !== member.id));
+                          }
+                        }}
+                        className="rounded border-slate-300 text-[#4C5540] focus:ring-[#4C5540]"
+                      />
+                      <div>
+                        <div className="text-xs">{member.name}</div>
+                        <div className="text-[10px] text-slate-400 font-normal">
+                          {member.email} · {member.team}
+                        </div>
+                      </div>
+                    </div>
+                    {isChecked && <Check className="h-4 w-4 text-[#4C5540] dark:text-[#A4C08B]" />}
+                  </label>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-[#2D372B] text-xs">
+              <span className="text-slate-500 font-medium">
+                تم اختيار {selectedChannelMembers.length} أعضاء
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setManagingMembersChannel(null)}
+                  className="rounded-xl border border-slate-200 dark:border-[#2D372B] px-3.5 py-1.5 font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-[#1E251D] cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    updateChannelMembers(managingMembersChannel.id, selectedChannelMembers);
+                    setManagingMembersChannel(null);
+                  }}
+                  className="rounded-xl bg-[#4C5540] px-4 py-1.5 font-bold text-white hover:bg-[#3B4432] shadow-xs cursor-pointer"
+                >
+                  حفظ الصلاحيات
+                </button>
+              </div>
             </div>
           </div>
         </div>

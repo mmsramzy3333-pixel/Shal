@@ -36,7 +36,10 @@ import {
   Palette,
   FolderGit2,
   Clock,
+  History,
   LogOut,
+  FileText,
+  TrendingUp,
 } from 'lucide-react';
 
 const NAV_ICONS_LOOKUP: Record<string, any> = {
@@ -383,8 +386,68 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     activeTab === 'attendance' ? 'text-white' : 'text-[#4C5540] group-hover:text-[#24291F]'
                   }`}
                 />
-                <span>{language === 'ar' ? 'سجل الحضور والدوام' : 'Attendance & Shifts'}</span>
+                <span>{language === 'ar' ? 'سجل الحضور والبصمة' : 'Attendance & Fingerprint'}</span>
               </div>
+            </button>
+
+            {/* Contracts & Company Legal Files Nav Button */}
+            <button
+              id="nav-contracts"
+              onClick={() => {
+                setActiveTab('contracts');
+                onMobileClose();
+              }}
+              className={`nav-item-interactive group flex w-full items-center justify-between rounded-xl px-3.5 py-2.5 text-xs font-semibold cursor-pointer ${
+                activeTab === 'contracts'
+                  ? 'bg-[#4C5540] text-white font-bold shadow-xs'
+                  : 'text-[#24291F] hover:bg-[#E9E1D6]/60 hover:text-[#24291F]'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <FileText
+                  className={`h-4 w-4 transition-all duration-200 group-hover:scale-110 ${
+                    activeTab === 'contracts' ? 'text-white' : 'text-[#4C5540] group-hover:text-[#24291F]'
+                  }`}
+                />
+                <span>{language === 'ar' ? 'العقود والملفات الرسمية' : 'Company Contracts'}</span>
+              </div>
+              <span
+                className={`rounded-full px-2 py-0.5 text-[9px] font-bold ${
+                  activeTab === 'contracts' ? 'bg-white/20 text-white' : 'bg-[#4C5540]/10 text-[#4C5540]'
+                }`}
+              >
+                عقود
+              </span>
+            </button>
+
+            {/* Reports & Analytics Nav Button */}
+            <button
+              id="nav-reports"
+              onClick={() => {
+                setActiveTab('reports');
+                onMobileClose();
+              }}
+              className={`nav-item-interactive group flex w-full items-center justify-between rounded-xl px-3.5 py-2.5 text-xs font-semibold cursor-pointer ${
+                activeTab === 'reports'
+                  ? 'bg-[#4C5540] text-white font-bold shadow-xs'
+                  : 'text-[#24291F] hover:bg-[#E9E1D6]/60 hover:text-[#24291F]'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <TrendingUp
+                  className={`h-4 w-4 transition-all duration-200 group-hover:scale-110 ${
+                    activeTab === 'reports' ? 'text-white' : 'text-[#4C5540] group-hover:text-[#24291F]'
+                  }`}
+                />
+                <span>{language === 'ar' ? 'التقارير والاستراتيجية' : 'Reports & Analytics'}</span>
+              </div>
+              <span
+                className={`rounded-full px-2 py-0.5 text-[9px] font-bold ${
+                  activeTab === 'reports' ? 'bg-white/20 text-white' : 'bg-[#4C5540]/10 text-[#4C5540]'
+                }`}
+              >
+                KPIs
+              </span>
             </button>
 
             {/* 6. Admin Button (#nav-admin) with ShieldCheck icon, Smooth Scale Hover & Opacity, Hover #3B4432, & Programmatic Submenu Action */}
@@ -489,6 +552,52 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 )}
               </div>
             )}
+
+            {/* 7. Activity Log (Audit Trail) */}
+            <button
+              id="nav-activity"
+              onClick={() => {
+                setActiveTab('activity');
+                onMobileClose();
+              }}
+              className={`nav-item-interactive group flex w-full items-center justify-between rounded-xl px-3.5 py-2.5 text-xs font-semibold cursor-pointer ${
+                activeTab === 'activity'
+                  ? 'bg-[#4C5540] text-white font-bold shadow-xs'
+                  : 'text-[#24291F] hover:bg-[#E9E1D6]/60 hover:text-[#24291F]'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <History
+                  className={`h-4 w-4 transition-all duration-200 group-hover:scale-110 ${
+                    activeTab === 'activity' ? 'text-white' : 'text-[#4C5540] group-hover:text-[#24291F]'
+                  }`}
+                />
+                <span>{language === 'ar' ? 'سجل التدقيق والعمليات' : 'Audit & Activity Log'}</span>
+              </div>
+            </button>
+
+            {/* 8. Workspace & Account Settings */}
+            <button
+              id="nav-settings"
+              onClick={() => {
+                setActiveTab('settings');
+                onMobileClose();
+              }}
+              className={`nav-item-interactive group flex w-full items-center justify-between rounded-xl px-3.5 py-2.5 text-xs font-semibold cursor-pointer ${
+                activeTab === 'settings'
+                  ? 'bg-[#4C5540] text-white font-bold shadow-xs'
+                  : 'text-[#24291F] hover:bg-[#E9E1D6]/60 hover:text-[#24291F]'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <Settings
+                  className={`h-4 w-4 transition-all duration-200 group-hover:scale-110 ${
+                    activeTab === 'settings' ? 'text-white' : 'text-[#4C5540] group-hover:text-[#24291F]'
+                  }`}
+                />
+                <span>{language === 'ar' ? 'إعدادات الحساب والمنظومة' : 'Settings & Profile'}</span>
+              </div>
+            </button>
           </div>
         </div>
 

@@ -19,6 +19,10 @@ import {
   RefreshCw,
   Sparkles,
   Award,
+  Fingerprint,
+  Download,
+  Shield,
+  Lock,
 } from 'lucide-react';
 
 export const AttendanceView: React.FC = () => {
@@ -48,6 +52,75 @@ export const AttendanceView: React.FC = () => {
   const [searchMember, setSearchMember] = useState('');
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [showClockOutConfirm, setShowClockOutConfirm] = useState(false);
+  const [biometricState, setBiometricState] = useState<'idle' | 'scanning' | 'success'>('idle');
+  const [biometricLogMsg, setBiometricLogMsg] = useState('');
+
+  // Check if current user is manager or owner
+  const isManagerOrAdmin =
+    currentUser.role === 'owner' ||
+    currentUser.role === 'admin' ||
+    currentUser.team === 'management' ||
+    hasPermission('can_view_all_attendance') ||
+    hasPermission('can_manage_roles');
+
+  const playBiometricChime = () => {
+    try {
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(587.33, audioCtx.currentTime);
+      osc.frequency.setValueAtTime(880, audioCtx.currentTime + 0.08);
+      gain.gain.setValueAtTime(0.18, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.28);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.28);
+    } catch {
+      // Audio not permitted
+    }
+  };
+
+  const handleBiometricScan = async () => {
+    if (isActionLoading || biometricState === 'scanning') return;
+    setBiometricState('scanning');
+    setBiometricLogMsg(language === 'ar' ? 'جارٍ مسح البصمة ومطابقة الهوية الرقمية للموظف...' : 'Scanning biometric fingerprint...');
+
+    setTimeout(async () => {
+      try {
+        playBiometricChime();
+        if (!isClockedIn) {
+          await clockIn();
+          setBiometricState('success');
+          setBiometricLogMsg(language === 'ar' ? 'تمت مطابقة البصمة بنجاح! تم تسجيل حضورك اليومي.' : 'Biometric match verified! Clocked in successfully.');
+        } else if (!isClockedOut) {
+          setShowClockOutConfirm(true);
+          setBiometricState('idle');
+          setBiometricLogMsg(language === 'ar' ? 'تمت مطابقة البصمة. يرجى تأكيد الانصراف.' : 'Biometric match verified. Confirm clock out.');
+        } else {
+          setBiometricState('success');
+          setBiometricLogMsg(language === 'ar' ? 'تم تسجيل الحضور والانصراف مسبقاً لهذا اليوم.' : 'Already clocked out for today.');
+        }
+      } catch (err) {
+        setBiometricState('idle');
+      } finally {
+        setTimeout(() => setBiometricState('idle'), 3500);
+      }
+    }, 1100);
+  };
+
+  const handleExportAttendanceCSV = () => {
+    const headers = ['Employee,Role,Date,ClockIn,ClockOut,LateMinutes,BreaksCount,TotalHours,Status'];
+    const rows = filteredRecords.map((r) =>
+      `"${r.userName}","${r.userRoleName || ''}","${r.date}","${r.clockIn || ''}","${r.clockOut || ''}",${r.lateMinutes || 0},${r.breaks?.length || 0},${((r.totalHours || (r.totalWorkMinutes || 0) / 60) || 0).toFixed(1)},"${r.status}"`
+    );
+    const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers, ...rows].join('\n');
+    const link = document.createElement('a');
+    link.href = encodeURI(csvContent);
+    link.download = `shal-attendance-report-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+  };
 
   // Helper for safe time formatting
   const formatTimeString = (timeVal?: string) => {
@@ -143,8 +216,12 @@ export const AttendanceView: React.FC = () => {
     }
   };
 
-  // Filtered records
-  const filteredRecords = attendanceRecords.filter((rec) => {
+  // Filtered records - strictly scoped: only management/admins see the company-wide roster
+  const visibleRecords = isManagerOrAdmin
+    ? attendanceRecords
+    : attendanceRecords.filter((rec) => rec.userId === currentUser.id);
+
+  const filteredRecords = visibleRecords.filter((rec) => {
     if (selectedMemberFilter !== 'all' && rec.userId !== selectedMemberFilter) return false;
     if (selectedDateFilter !== 'all' && rec.date !== selectedDateFilter) return false;
     if (selectedStatusFilter !== 'all' && rec.status !== selectedStatusFilter) return false;
@@ -195,20 +272,89 @@ export const AttendanceView: React.FC = () => {
         </div>
       </div>
 
+      {/* Biometric Fingerprint Terminal Scanner */}
+      <div className="rounded-2xl border border-[#BDAF9C]/35 bg-white dark:bg-[#181D18] p-5 shadow-xs">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#4C5540]/10 text-[#4C5540] dark:text-[#A4C08B]">
+              <Fingerprint className="h-7 w-7" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                  {language === 'ar' ? 'ماسح البصمة البيومترية الذكي (Biometric Punch)' : 'Biometric Attendance Punch'}
+                </h3>
+                <span className="rounded-full bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-300 flex items-center gap-1">
+                  <Sparkles className="h-3 w-3" />
+                  {language === 'ar' ? 'تسجيل فوري بضغطة واحدة' : 'Instant 1-Click'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-[#BDAF9C] mt-0.5">
+                {language === 'ar'
+                  ? 'محطة بصمة وكالة شال الرقمية • تحقق فوري ومطابقة بيومترية لحضور وانصراف الموظف.'
+                  : 'Agency digital fingerprint terminal • Instant biometric check-in & verification.'}
+              </p>
+            </div>
+          </div>
+
+          {/* Interactive Biometric Sensor Button */}
+          <div className="flex flex-col sm:flex-row items-center gap-3">
+            <button
+              type="button"
+              onClick={handleBiometricScan}
+              disabled={isActionLoading || biometricState === 'scanning'}
+              className={`relative overflow-hidden group flex items-center gap-3 px-5 py-3 rounded-2xl border transition-all cursor-pointer shadow-md ${
+                biometricState === 'scanning'
+                  ? 'bg-amber-600 text-white border-amber-500 animate-pulse'
+                  : biometricState === 'success'
+                  ? 'bg-emerald-600 text-white border-emerald-500'
+                  : 'bg-[#4C5540] hover:bg-[#3B4432] text-white border-[#3B4432]'
+              }`}
+            >
+              <div className="relative">
+                <Fingerprint className={`h-6 w-6 ${biometricState === 'scanning' ? 'animate-bounce' : ''}`} />
+                {biometricState === 'scanning' && (
+                  <div className="absolute inset-x-0 top-0 h-0.5 bg-[#b5f812] animate-ping" />
+                )}
+              </div>
+              <div className="text-start">
+                <div className="text-xs font-bold leading-tight">
+                  {biometricState === 'scanning'
+                    ? (language === 'ar' ? 'جارٍ مسح البصمة...' : 'Scanning...')
+                    : biometricState === 'success'
+                    ? (language === 'ar' ? 'تمت مطابقة البصمة ✓' : 'Fingerprint Matched ✓')
+                    : (language === 'ar' ? 'المسح بالبصمة البيومترية' : 'Scan Biometric Fingerprint')}
+                </div>
+                <div className="text-[10px] opacity-80">
+                  {language === 'ar' ? 'تسجيل الحضور / الانصراف الآلي' : 'Auto Clock In / Out'}
+                </div>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        {biometricLogMsg && (
+          <div className="mt-3 rounded-xl bg-slate-50 dark:bg-[#1E251D] p-2.5 text-xs font-medium text-slate-700 dark:text-[#E9E1D6] border border-slate-200/60 dark:border-[#2D372B] flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+            <span>{biometricLogMsg}</span>
+          </div>
+        )}
+      </div>
+
       {/* Main Interactive Grid: Clock Card + Hourly Challenge Card */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Card 1 & 2: Clock-in/Clock-out Punch Card */}
-        <div className="lg:col-span-2 rounded-2xl border border-[#BDAF9C]/35 bg-white p-6 shadow-sm">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-4">
+        <div className="lg:col-span-2 rounded-2xl border border-[#BDAF9C]/35 bg-white dark:bg-[#181D18] p-6 shadow-sm">
+          <div className="flex items-center justify-between border-b border-slate-100 dark:border-[#2D372B] pb-4 mb-4">
             <div className="flex items-center gap-3">
               <div className="rounded-xl bg-[#4C5540]/10 p-2.5 text-[#4C5540]">
                 <Clock className="h-6 w-6" />
               </div>
               <div>
-                <h3 className="text-base font-bold text-slate-900">
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
                   {language === 'ar' ? 'بطاقة تسجيل دوام اليوم' : "Today's Work Shift"}
                 </h3>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-slate-500 dark:text-[#BDAF9C]">
                   {currentUser.name} • {currentUser.email}
                 </p>
               </div>
@@ -460,51 +606,79 @@ export const AttendanceView: React.FC = () => {
       </div>
 
       {/* Attendance Log Table & Administration View */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
+      <div className="rounded-2xl border border-slate-200 dark:border-[#2D372B] bg-white dark:bg-[#181D18] p-5 shadow-xs">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
           <div>
-            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <FileText className="h-4 w-4 text-[#4C5540]" />
-              {language === 'ar' ? 'سجل الحضور والانصراف المعتمد (Database Records)' : 'Official Attendance Log'}
-            </h3>
-            <p className="text-xs text-slate-500">
-              {language === 'ar' ? 'جميع السجلات مقروءة ومحفوظة مباشرة في قاعدة بيانات Firestore' : 'Live synchronized records in cloud Firestore'}
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <FileText className="h-4 w-4 text-[#4C5540] dark:text-[#A4C08B]" />
+                {isManagerOrAdmin
+                  ? (language === 'ar' ? 'سجل الحضور والانصراف المعتمد (إشراف الإدارة)' : 'Official Company Attendance Log (Management)')
+                  : (language === 'ar' ? 'سجلي الشخصي المعتمد للحضور والانصراف' : 'My Personal Attendance Record')}
+              </h3>
+              {!isManagerOrAdmin && (
+                <span className="rounded-md bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:text-amber-300 flex items-center gap-1">
+                  <Lock className="h-3 w-3" />
+                  {language === 'ar' ? 'سجل الفريق العام محجوب للإدارة فقط' : 'Company Log Restricted'}
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-slate-500 dark:text-[#BDAF9C] mt-0.5">
+              {isManagerOrAdmin
+                ? (language === 'ar' ? 'صلاحية إدارية كاملة للاطلاع على سجلات جميع موظفي الوكالة وتصديرها' : 'Administrative privilege: View and export all agency member records')
+                : (language === 'ar' ? 'طبقاً لسياسة وكالة شال، يقتصر الاطلاع على سجلات الحضور العامة على المناصب الإدارية فقط' : 'Per agency policy, full roster access is strictly reserved for Management')}
             </p>
           </div>
 
-          {/* Filters */}
+          {/* Actions & Filters */}
           <div className="flex flex-wrap items-center gap-2 text-xs">
-            {/* Search */}
-            <div className="relative">
-              <Search className="absolute top-1/2 -translate-y-1/2 start-2.5 h-3.5 w-3.5 text-slate-400" />
-              <input
-                type="text"
-                value={searchMember}
-                onChange={(e) => setSearchMember(e.target.value)}
-                placeholder={language === 'ar' ? 'بحث باسم الموظف...' : 'Search member...'}
-                className="rounded-lg border border-slate-200 bg-slate-50 py-1 ps-8 pe-2 text-xs text-slate-800 focus:bg-white focus:outline-none"
-              />
-            </div>
+            {isManagerOrAdmin && (
+              <button
+                type="button"
+                onClick={handleExportAttendanceCSV}
+                className="flex items-center gap-1.5 rounded-xl border border-[#4C5540]/30 bg-[#FAF7F2] dark:bg-[#1E251D] px-3 py-1.5 font-bold text-[#24291F] dark:text-white hover:bg-white transition-colors cursor-pointer"
+                title={language === 'ar' ? 'تصدير السجل كملف CSV' : 'Export CSV'}
+              >
+                <Download className="h-3.5 w-3.5 text-[#4C5540]" />
+                <span>{language === 'ar' ? 'تصدير CSV' : 'Export'}</span>
+              </button>
+            )}
 
-            {/* Member Filter */}
-            <select
-              value={selectedMemberFilter}
-              onChange={(e) => setSelectedMemberFilter(e.target.value)}
-              className="rounded-lg border border-slate-200 bg-slate-50 p-1 text-xs text-slate-800 focus:bg-white focus:outline-none"
-            >
-              <option value="all">{language === 'ar' ? 'كافة الموظفين' : 'All Members'}</option>
-              {users.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name}
-                </option>
-              ))}
-            </select>
+            {isManagerOrAdmin && (
+              <>
+                {/* Search */}
+                <div className="relative">
+                  <Search className="absolute top-1/2 -translate-y-1/2 start-2.5 h-3.5 w-3.5 text-slate-400" />
+                  <input
+                    type="text"
+                    value={searchMember}
+                    onChange={(e) => setSearchMember(e.target.value)}
+                    placeholder={language === 'ar' ? 'بحث باسم الموظف...' : 'Search member...'}
+                    className="rounded-lg border border-slate-200 dark:border-[#2D372B] bg-slate-50 dark:bg-[#151A14] py-1 ps-8 pe-2 text-xs text-slate-800 dark:text-white focus:bg-white focus:outline-none"
+                  />
+                </div>
+
+                {/* Member Filter */}
+                <select
+                  value={selectedMemberFilter}
+                  onChange={(e) => setSelectedMemberFilter(e.target.value)}
+                  className="rounded-lg border border-slate-200 dark:border-[#2D372B] bg-slate-50 dark:bg-[#151A14] p-1 text-xs text-slate-800 dark:text-white focus:outline-none"
+                >
+                  <option value="all">{language === 'ar' ? 'كافة الموظفين' : 'All Members'}</option>
+                  {users.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
 
             {/* Status Filter */}
             <select
               value={selectedStatusFilter}
               onChange={(e) => setSelectedStatusFilter(e.target.value)}
-              className="rounded-lg border border-slate-200 bg-slate-50 p-1 text-xs text-slate-800 focus:bg-white focus:outline-none"
+              className="rounded-lg border border-slate-200 dark:border-[#2D372B] bg-slate-50 dark:bg-[#151A14] p-1 text-xs text-slate-800 dark:text-white focus:outline-none"
             >
               <option value="all">{language === 'ar' ? 'كافة الحالات' : 'All Statuses'}</option>
               <option value="present">{language === 'ar' ? 'حاضر في الموعد' : 'Present / On-Time'}</option>

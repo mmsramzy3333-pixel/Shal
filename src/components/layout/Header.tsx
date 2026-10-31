@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { ShalLogo } from '../common/ShalLogo';
 import {
@@ -16,6 +16,8 @@ import {
   AlertTriangle,
   CheckSquare,
   Zap,
+  Sun,
+  Moon,
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -40,7 +42,15 @@ export const Header: React.FC<HeaderProps> = ({
     language,
     setActiveTab,
     logout,
+    theme,
+    toggleTheme,
   } = useApp();
+
+  const [headerTime, setHeaderTime] = useState<Date>(new Date());
+  useEffect(() => {
+    const t = setInterval(() => setHeaderTime(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
 
   const [showUserSwitcher, setShowUserSwitcher] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -259,6 +269,29 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           )}
         </div>
+
+        {/* Live Agency Digital Clock with Seconds */}
+        <div className="hidden lg:flex items-center gap-1.5 rounded-xl border border-[#BDAF9C]/35 bg-white dark:bg-[#1E251D] px-2.5 py-1.5 text-xs shadow-2xs font-mono">
+          <Clock className="h-3.5 w-3.5 text-[#4C5540] dark:text-[#A4C08B]" />
+          <span className="font-bold text-[#24291F] dark:text-[#F3F1EC]">
+            {headerTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+          </span>
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+        </div>
+
+        {/* Dark Mode Theme Toggle */}
+        <button
+          type="button"
+          onClick={toggleTheme}
+          className="btn-interactive rounded-xl border border-[#BDAF9C]/35 bg-white dark:bg-[#1E251D] p-2 text-slate-700 dark:text-[#E9E1D6] hover:bg-[#FAF7F2] transition-colors cursor-pointer shadow-2xs"
+          title={theme === 'dark' ? 'تفعيل الوضع الفاتح' : 'تفعيل الوضع الليلي (Dark Mode)'}
+        >
+          {theme === 'dark' ? (
+            <Sun className="h-4 w-4 text-amber-400" />
+          ) : (
+            <Moon className="h-4 w-4 text-[#4C5540]" />
+          )}
+        </button>
 
         {/* Notifications Dropdown */}
         <div className="relative">

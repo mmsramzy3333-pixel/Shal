@@ -43,11 +43,69 @@
   --nabd-gray-border: #C4B6A4;
 }
 
+/* Deep Charcoal Dark Mode Theme retaining Shal-Green brand accents */
+.dark, html.dark, body.dark {
+  --color-primary: #5B664D;
+  --color-primary-dark: #121612;
+  --color-primary-light: #7E8C6D;
+  --color-button-hover: #4C5540;
+  --color-focus: #8A927D;
+
+  --color-background: #121612;
+  --color-surface: #181D18;
+  --color-surface-alt: #1F261F;
+  --color-surface-card: #242B23;
+
+  --color-taupe: #353F33;
+  --color-border: #2D372B;
+
+  --color-text-primary: #F3F1EC;
+  --color-text-secondary: #C8D1C0;
+  --color-text-on-primary: #FFFFFF;
+
+  --shal-primary: #5B664D;
+  --shal-primary-hover: #4C5540;
+  --shal-dark: #0E120E;
+  --shal-sage: #7E8C6D;
+  --shal-beige: #202620;
+  --shal-ivory: #181D18;
+  --shal-taupe: #2E382C;
+  --shal-border: #2F392D;
+
+  background-color: #121612 !important;
+  color: #F3F1EC !important;
+}
+
+.dark input[type="text"],
+.dark input[type="email"],
+.dark input[type="password"],
+.dark input[type="number"],
+.dark input[type="date"],
+.dark input[type="time"],
+.dark input[type="search"],
+.dark input[type="url"],
+.dark input[type="tel"],
+.dark select,
+.dark textarea {
+  background-color: #1B221B;
+  color: #F3F1EC;
+  border-color: #2F392D;
+}
+
+.dark input:focus,
+.dark select:focus,
+.dark textarea:focus {
+  background-color: #222921 !important;
+  border-color: #5B664D !important;
+  box-shadow: 0 0 0 3px rgba(91, 102, 77, 0.3) !important;
+}
+
 @layer base {
   body {
     font-family: 'Cairo', 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
     background-color: #E9E1D6;
     color: #24291F;
+    transition: background-color 0.25s ease, color 0.25s ease;
   }
 }
 

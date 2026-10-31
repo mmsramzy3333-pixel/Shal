@@ -97,15 +97,19 @@ export default async function handler(req: any, res: any) {
     }
 
     // Record in audit_logs
-    await supabaseAdmin.from('audit_logs').insert({
-      timestamp: new Date().toISOString(),
-      actor_id: callerId,
-      actor_email: callerProfile.email || userData.user.email,
-      action_type: 'user.password_reset',
-      target_resource_id: userId,
-      target_resource_type: 'auth.user',
-      new_data: { reset_by: callerProfile.role },
-    }).catch(() => {});
+    try {
+      await supabaseAdmin.from('audit_logs').insert({
+        timestamp: new Date().toISOString(),
+        actor_id: callerId,
+        actor_email: callerProfile.email || userData.user.email,
+        action_type: 'user.password_reset',
+        target_resource_id: userId,
+        target_resource_type: 'auth.user',
+        new_data: { reset_by: callerProfile.role },
+      });
+    } catch {
+      // Non-fatal if audit logging fails
+    }
 
     return res.status(200).json({
       success: true,

@@ -92,6 +92,79 @@ export const DashboardView: React.FC = () => {
     return isHighOrUrgent || isDueTodayOrOverdue;
   });
 
+  // Upcoming Task Deadlines (non-completed tasks sorted by due date ascending)
+  const upcomingDeadlineTasks = tasks
+    .filter((t) => t.status !== 'done' && t.status !== 'client_delivered' && Boolean(t.dueDate))
+    .sort((a, b) => (a.dueDate || '').localeCompare(b.dueDate || ''))
+    .slice(0, 6);
+
+  const getDeadlineStatusMeta = (dueDateStr?: string) => {
+    if (!dueDateStr) {
+      return {
+        label: language === 'ar' ? 'غير محدد' : 'No Date',
+        bg: 'bg-slate-100',
+        text: 'text-slate-600',
+        border: 'border-slate-200',
+        dot: 'bg-slate-400',
+        isCritical: false,
+      };
+    }
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const due = new Date(dueDateStr);
+    due.setHours(0, 0, 0, 0);
+    const diffDays = Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+    if (diffDays < 0) {
+      return {
+        label: language === 'ar' ? `متأخرة (${Math.abs(diffDays)} يوم)` : `Overdue (${Math.abs(diffDays)}d)`,
+        bg: 'bg-rose-50',
+        text: 'text-rose-700',
+        border: 'border-rose-200',
+        dot: 'bg-rose-500 animate-pulse',
+        isCritical: true,
+      };
+    }
+    if (diffDays === 0) {
+      return {
+        label: language === 'ar' ? 'تسليم اليوم' : 'Due Today',
+        bg: 'bg-amber-50',
+        text: 'text-amber-800',
+        border: 'border-amber-200',
+        dot: 'bg-amber-500 animate-ping',
+        isCritical: true,
+      };
+    }
+    if (diffDays === 1) {
+      return {
+        label: language === 'ar' ? 'تسليم غداً' : 'Due Tomorrow',
+        bg: 'bg-orange-50',
+        text: 'text-orange-800',
+        border: 'border-orange-200',
+        dot: 'bg-orange-500',
+        isCritical: false,
+      };
+    }
+    if (diffDays <= 3) {
+      return {
+        label: language === 'ar' ? `خلال ${diffDays} أيام` : `In ${diffDays} days`,
+        bg: 'bg-sky-50',
+        text: 'text-sky-800',
+        border: 'border-sky-200',
+        dot: 'bg-sky-500',
+        isCritical: false,
+      };
+    }
+    return {
+      label: language === 'ar' ? 'على المسار' : 'On Track',
+      bg: 'bg-emerald-50',
+      text: 'text-emerald-700',
+      border: 'border-emerald-200',
+      dot: 'bg-emerald-500',
+      isCritical: false,
+    };
+  };
+
   // Recharts Data 1: Design Tasks Status & Deliverables
   const designChartData = [
     {
@@ -498,6 +571,140 @@ export const DashboardView: React.FC = () => {
 
       {/* Team Availability & Workload Widget */}
       <TeamAvailabilityWidget />
+
+      {/* Visual Integration: Upcoming Task Deadlines List with Status Indicators */}
+      <div className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-xs transition-all hover:border-slate-300">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#4C5540]/10 text-[#4C5540]">
+              <Clock className="h-5 w-5" />
+            </span>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-slate-900">
+                  {language === 'ar' ? 'مواعيد تسليم المهام القادمة (Upcoming Deadlines)' : 'Upcoming Task Deadlines'}
+                </h3>
+                <span className="rounded-full bg-[#4C5540]/10 px-2 py-0.5 text-[10px] font-bold text-[#4C5540] border border-[#4C5540]/20">
+                  {upcomingDeadlineTasks.length} {language === 'ar' ? 'مهام قادمة' : 'upcoming'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {language === 'ar'
+                  ? 'متابعة بصرية دقيقة لمواعيد التسليم القادمة مع مؤشرات الحالة اللحظية لمراقبة الالتزام بالجدول الزمني.'
+                  : 'Chronological timeline of upcoming task deliverables with real-time status indicators.'}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setActiveTab('tasks')}
+              className="btn-interactive flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-[#4C5540] hover:bg-slate-50 shadow-2xs cursor-pointer"
+            >
+              <span>{language === 'ar' ? 'لوحة المهام الكاملة' : 'View Kanban'}</span>
+              <ArrowUpRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+
+        {upcomingDeadlineTasks.length === 0 ? (
+          <div className="py-8 text-center text-slate-400 text-xs">
+            <CheckCircle2 className="h-8 w-8 mx-auto text-emerald-500 mb-2 opacity-80" />
+            <p className="font-semibold text-slate-700">
+              {language === 'ar' ? 'لا توجد مواعيد تسليم معلقة حالياً' : 'No upcoming deadlines'}
+            </p>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              {language === 'ar' ? 'كافة المهام تم إنجازها وتسليمها بالكامل!' : 'All deliverables are completed on schedule.'}
+            </p>
+          </div>
+        ) : (
+          <div className="mt-3.5 divide-y divide-slate-100">
+            {upcomingDeadlineTasks.map((task) => {
+              const statusMeta = getDeadlineStatusMeta(task.dueDate);
+              const isUrgent = task.priority === 'urgent';
+              const isDesign = task.teamType === 'design';
+
+              return (
+                <div
+                  key={task.id}
+                  className="py-3 px-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl hover:bg-slate-50/70 transition-colors"
+                >
+                  <div className="flex items-start sm:items-center gap-3 min-w-0 flex-1">
+                    <button
+                      onClick={() => updateTaskStatus(task.id, 'done')}
+                      title={language === 'ar' ? 'تحديد كمكتمل' : 'Mark completed'}
+                      className="mt-0.5 sm:mt-0 h-5 w-5 rounded-lg border border-slate-300 hover:border-emerald-500 hover:bg-emerald-50 flex items-center justify-center transition-colors cursor-pointer shrink-0"
+                    >
+                      <Check className="h-3 w-3 text-transparent hover:text-emerald-600" />
+                    </button>
+
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h4 className="text-xs font-bold text-slate-900 truncate max-w-md">
+                          {task.title}
+                        </h4>
+                        <span
+                          className={`rounded px-1.5 py-0.2 text-[9px] font-bold ${
+                            isDesign ? 'bg-purple-50 text-purple-700' : 'bg-blue-50 text-blue-700'
+                          }`}
+                        >
+                          {isDesign
+                            ? language === 'ar' ? 'تصميم' : 'Design'
+                            : language === 'ar' ? 'سوشيال' : 'Social'}
+                        </span>
+                        {task.projectName && (
+                          <span className="text-[10px] text-slate-400 font-medium">
+                            • {task.projectName}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-3 mt-1 text-[11px] text-slate-500">
+                        {task.assignee && (
+                          <span className="flex items-center gap-1 text-slate-600 font-medium">
+                            <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
+                            {task.assignee.name}
+                          </span>
+                        )}
+                        <span className="font-mono text-slate-400">
+                          {language === 'ar' ? 'الموعد المحدد:' : 'Due:'} {task.dueDate}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                    {/* Priority Badge */}
+                    <span
+                      className={`rounded-lg px-2 py-0.5 text-[10px] font-extrabold ${
+                        isUrgent
+                          ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                          : task.priority === 'high'
+                          ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                          : 'bg-slate-100 text-slate-600'
+                      }`}
+                    >
+                      {task.priority === 'urgent'
+                        ? language === 'ar' ? 'عاجل جداً' : 'Urgent'
+                        : task.priority === 'high'
+                        ? language === 'ar' ? 'أولوية عالية' : 'High'
+                        : language === 'ar' ? 'عادي' : 'Normal'}
+                    </span>
+
+                    {/* Deadline Status Indicator Badge */}
+                    <span
+                      className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-bold border ${statusMeta.bg} ${statusMeta.text} ${statusMeta.border} shadow-2xs`}
+                    >
+                      <span className={`h-2 w-2 rounded-full ${statusMeta.dot}`} />
+                      {statusMeta.label}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       {/* Middle Section: Workflow Approvals + SIDE COMPONENT "جدول اليوم" */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 items-start">

@@ -22,7 +22,9 @@ export type PermissionKey =
   | 'can_manage_media_buying'
   | 'can_manage_seo'
   | 'can_manage_dev'
-  | 'can_manage_uiux';
+  | 'can_manage_uiux'
+  | 'can_manage_contracts'
+  | 'can_view_all_attendance';
 
 export type PermissionCategory =
   | 'crm'
@@ -72,12 +74,17 @@ export type AgencyTeam =
   | 'operations'
   | 'marketing'
   | 'sales'
+  | 'crm'
   | 'content'
   | 'social'
+  | 'design'
+  | 'motion_graphics'
   | 'uiux'
   | 'seo'
   | 'developer'
-  | 'media_buying';
+  | 'media_buying'
+  | 'finance'
+  | 'hr';
 
 export type UserPresenceStatus = 'online' | 'busy' | 'offline';
 
@@ -311,7 +318,18 @@ export interface AppNotification {
   message: string;
   type: 'task_assigned' | 'content_review' | 'content_approved' | 'deadline_warning';
   isRead: boolean;
-  linkTab?: 'dashboard' | 'clients' | 'tasks' | 'social' | 'admin' | 'activity';
+  linkTab?:
+    | 'dashboard'
+    | 'clients'
+    | 'tasks'
+    | 'social'
+    | 'admin'
+    | 'activity'
+    | 'contracts'
+    | 'reports'
+    | 'attendance'
+    | 'chat'
+    | 'settings';
   createdAt: string;
 }
 
@@ -418,6 +436,74 @@ export interface ChatChannel {
   team: AgencyTeam | 'all';
   icon?: string;
   unreadCount?: number;
+  allowedMemberIds?: string[]; // IDs of users authorized by management to view this channel
+}
+
+export type DealStage =
+  | 'lead'              // مؤهل جديد
+  | 'proposal_sent'     // إرسال عرض السعر
+  | 'negotiation'       // تفاوض وتعديل البنود
+  | 'contract_pending'  // انتظار توقيع العقد
+  | 'closed_won'        // صفقة رابحة مغلقة
+  | 'closed_lost';      // صفقة خاسرة
+
+export interface SalesDeal {
+  id: string;
+  title: string;
+  clientId: string;
+  clientName: string;
+  contactPerson: string;
+  value: number;
+  currency: 'USD' | 'SAR' | 'AED' | 'EGP';
+  stage: DealStage;
+  probability: number; // 0 - 100
+  assignedUserId: string;
+  assignedUserName: string;
+  expectedCloseDate: string;
+  services: string[];
+  notes?: string;
+  createdAt: string;
+}
+
+export type ContractStatus = 'draft' | 'pending_signature' | 'active' | 'expired' | 'terminated';
+export type ContractType = 'retainer' | 'nda' | 'project_fixed' | 'ip_agreement' | 'partnership';
+
+export interface CompanyContract {
+  id: string;
+  title: string;
+  contractNumber: string;
+  clientId?: string;
+  clientName: string;
+  type: ContractType;
+  status: ContractStatus;
+  value: number;
+  currency: 'USD' | 'SAR' | 'AED' | 'EGP';
+  startDate: string;
+  endDate: string;
+  signedDate?: string;
+  signedByAgency?: string;
+  signedByClient?: string;
+  fileUrl?: string;
+  fileName?: string;
+  fileSize?: string;
+  scopeSummary: string;
+  autoRenew: boolean;
+  notes?: string;
+  createdAt: string;
+}
+
+export interface QuickLoginPreset {
+  id: string;
+  name: string;
+  email: string;
+  roleTitleAr?: string;
+  roleTitleEn?: string;
+  roleTitle?: string;
+  badge: string;
+  badgeColor?: string;
+  isSystemAdmin?: boolean;
+  team?: AgencyTeam;
+  isCustom?: boolean;
 }
 
 export interface AttendanceBreak {

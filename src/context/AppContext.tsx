@@ -26,6 +26,7 @@ import {
   auditLogToActivityItem,
   profileToUser,
   userToProfile,
+  adminCreateUserAccount,
   adminResetUserPassword,
   signInWithEmail,
   signUpWithEmail,
@@ -125,12 +126,15 @@ interface AppContextType {
   toggleMessageReaction: (messageId: string, emoji: string) => void;
   deleteChatMessage: (messageId: string) => void;
   togglePinChatMessage: (messageId: string) => void;
+  updateChannelMembers: (channelId: string, allowedMemberIds: string[]) => void;
   notifications: AppNotification[];
   activityLogs: ActivityLogItem[];
   activeTab: string;
   setActiveTab: (tab: string) => void;
   language: 'ar' | 'en';
   setLanguage: (lang: 'ar' | 'en') => void;
+  theme: 'light' | 'dark';
+  toggleTheme: () => void;
 
   // Real Authentication
   isAuthenticated: boolean;
@@ -232,7 +236,7 @@ interface AppContextType {
   updateRolePermissions: (roleId: string, permissions: PermissionKey[]) => void;
   updateRole: (roleId: string, updates: Partial<Role>) => void;
   deleteRole: (roleId: string) => void;
-  addUser: (user: Omit<User, 'id' | 'createdAt'>) => void;
+  addUser: (user: Omit<User, 'id' | 'createdAt'>) => Promise<{ success: boolean; error?: string }>;
   updateUser: (userId: string, updates: Partial<User>) => void;
   updateUserAccount: (
     userId: string,
@@ -313,18 +317,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   });
 
-  const [currentUser, setCurrentUser] = useState<User>(() => {
-    try {
-      const activeSessionId = localStorage.getItem(`${STORAGE_KEY}_active_session`);
-      if (activeSessionId) {
-        const saved = localStorage.getItem(`${STORAGE_KEY}_current_user`);
-        if (saved) return JSON.parse(saved);
-      }
-    } catch {
-      // fallback
-    }
-    return null as any;
-  });
+  const [currentUser, setCurrentUser] = useState<User>(null as any);
 
   const currentUserRef = useRef<User | null>(currentUser);
   useEffect(() => {
@@ -489,6 +482,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [language, setLanguage] = useState<'ar' | 'en'>('ar');
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    try {
+      const saved = localStorage.getItem(`${STORAGE_KEY}_theme`);
+      if (saved === 'dark' || saved === 'light') return saved;
+      return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    } catch {
+      return 'light';
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(`${STORAGE_KEY}_theme`, theme);
+      if (theme === 'dark') {
+        document.documentElement.classList.add('dark');
+        document.body.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+        document.body.classList.remove('dark');
+      }
+    } catch {
+      // Ignore
+    }
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
+  };
+
   const [toasts, setToasts] = useState<ToastNotification[]>([]);
 
   // User Presence State
@@ -582,70 +604,119 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, []);
 
-  // 3. Supabase Authentication State Listener
+  // 3. Supabase Authentication State Listener (Strict Official Supabase Session Validation)
   useEffect(() => {
+    let isMounted = true;
+
+    async function restoreSession(session: any) {
+      if (!isMounted) return;
+
+      if (!session?.user) {
+        // No active or valid Supabase session: fail-closed, revoke access
+        setCurrentUser(null as any);
+        localStorage.removeItem(`${STORAGE_KEY}_active_session`);
+        localStorage.removeItem(`${STORAGE_KEY}_current_user`);
+        setAuthLoading(false);
+        return;
+      }
+
+      try {
+        const authUser = session.user;
+        const email = authUser.email?.toLowerCase();
+
+        // 1. Query verified profile from public.profiles
+        const { data: dbProfile, error: profError } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', authUser.id)
+          .maybeSingle();
+
+        if (profError) {
+          console.warn('[Supabase Session Restore profile query note]:', profError.message);
+        }
+
+        let resolvedUser: User | null = null;
+
+        if (dbProfile) {
+          resolvedUser = profileToUser(dbProfile);
+        } else if (email) {
+          // If profile ID doesn't match yet, check by email
+          const { data: profileByEmail } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('email', email)
+            .maybeSingle();
+
+          if (profileByEmail) {
+            resolvedUser = profileToUser(profileByEmail);
+          } else {
+            // New user account: construct clean model from auth metadata
+            const defaultRole =
+              email === 'm.m.s.ramzy3333@gmail.com' || email === 'medhat.nabdalwusul@gmail.com'
+                ? 'owner'
+                : 'member';
+
+            const newProf: DbProfile = {
+              id: authUser.id,
+              name: authUser.user_metadata?.name || email.split('@')[0],
+              email,
+              role: defaultRole,
+              employee_number: authUser.user_metadata?.employee_number || '01',
+              team: authUser.user_metadata?.team || 'operations',
+              status: 'active',
+            };
+
+            await upsertSupabaseProfile(newProf).catch(() => {});
+            resolvedUser = profileToUser(newProf);
+          }
+        }
+
+        if (resolvedUser) {
+          if (resolvedUser.status === 'inactive') {
+            await signOutUser();
+            setCurrentUser(null as any);
+            setAuthLoading(false);
+            return;
+          }
+
+          setCurrentUser(resolvedUser);
+          localStorage.setItem(`${STORAGE_KEY}_active_session`, resolvedUser.id);
+          localStorage.setItem(`${STORAGE_KEY}_current_user`, JSON.stringify(resolvedUser));
+        } else {
+          setCurrentUser(null as any);
+        }
+      } catch (err) {
+        console.warn('[Session restore exception]:', err);
+        setCurrentUser(null as any);
+      } finally {
+        if (isMounted) {
+          setAuthLoading(false);
+        }
+      }
+    }
+
     // 3.1 Initial session check
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        const email = session.user.email?.toLowerCase();
-        const match = users.find((u) => u.id === session.user.id || (email && u.email.toLowerCase() === email));
-        if (match) {
-          setCurrentUser(match);
-          localStorage.setItem(`${STORAGE_KEY}_active_session`, match.id);
-          localStorage.setItem(`${STORAGE_KEY}_current_user`, JSON.stringify(match));
-        }
-      } else {
-        const activeSessionId = localStorage.getItem(`${STORAGE_KEY}_active_session`);
-        if (activeSessionId) {
-          const match = users.find((u) => u.id === activeSessionId);
-          if (match) {
-            setCurrentUser(match);
-          }
-        }
-      }
-      setAuthLoading(false);
+      restoreSession(session);
     });
 
-    // 3.2 Live auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (session?.user) {
-        const email = session.user.email?.toLowerCase();
-        let match = users.find((u) => u.id === session.user.id || (email && u.email.toLowerCase() === email));
-        if (!match && email) {
-          match = {
-            id: session.user.id,
-            name: session.user.user_metadata?.name || email.split('@')[0],
-            email,
-            roleIds: users.length === 0 ? ['role-founder'] : ['role-marketing-manager'],
-            employeeNumber: String(users.length + 1).padStart(2, '0'),
-            team: users.length === 0 ? 'management' : 'operations',
-            avatar: getShalEmployeeAvatar('01', '#0F172A'),
-            status: 'active',
-            createdAt: new Date().toISOString().slice(0, 10),
-          };
-          setUsers((prev) => [...prev.filter((u) => u.id !== match!.id), match!]);
-        }
-        if (match) {
-          setCurrentUser(match);
-          localStorage.setItem(`${STORAGE_KEY}_active_session`, match.id);
-          localStorage.setItem(`${STORAGE_KEY}_current_user`, JSON.stringify(match));
-        }
+    // 3.2 Live auth changes listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT' || !session) {
+        setCurrentUser(null as any);
+        localStorage.removeItem(`${STORAGE_KEY}_active_session`);
+        localStorage.removeItem(`${STORAGE_KEY}_current_user`);
+        setAuthLoading(false);
       } else {
-        const activeSessionId = localStorage.getItem(`${STORAGE_KEY}_active_session`);
-        if (activeSessionId) {
-          const match = users.find((u) => u.id === activeSessionId);
-          if (match) {
-            setCurrentUser(match);
-          }
-        }
+        restoreSession(session);
       }
-      setAuthLoading(false);
     });
 
     return () => {
+      isMounted = false;
       subscription.unsubscribe();
     };
-  }, [users]);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem(`${STORAGE_KEY}_chat_channels`, JSON.stringify(chatChannels));
@@ -1092,130 +1163,113 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     await updateSupabaseUserRole(userId, appRole);
   };
 
-  // 4. Supabase Authentication Actions
+  // 4. Supabase Authentication Actions (Strict Official Supabase Flow)
   const login = async (email: string, pass: string): Promise<{ success: boolean; error?: string }> => {
     const cleanEmail = email.trim().toLowerCase();
     const cleanPass = pass.trim();
 
-    try {
-      // 1. Attempt Supabase Auth signIn if credentials match
-      let authUser = null;
-      try {
-        const authRes = await signInWithEmail(cleanEmail, cleanPass);
-        if (authRes.success && authRes.user) {
-          authUser = authRes.user;
-        }
-      } catch (authErr) {
-        console.warn('[Supabase signIn note]:', authErr);
-      }
-
-      // 2. Identify candidate user from state or predefined agency directory
-      let matchedUser = users.find((u) => u.email.toLowerCase() === cleanEmail);
-      if (!matchedUser) {
-        matchedUser = INITIAL_USERS.find((u) => u.email.toLowerCase() === cleanEmail);
-      }
-
-      // 3. Password matching rules:
-      // - Match exact user password
-      // - Accept agency master passkeys: 'Shal@2026', 'Shal@Founder2026', 'ShalAgency@2026', 'admin123'
-      // - If authenticated via Supabase session, permit
-      // - If user has no password yet (demo account), permit
-      const isMasterPass =
-        cleanPass === 'Shal@2026' ||
-        cleanPass === 'Shal@Founder2026' ||
-        cleanPass === 'ShalAgency@2026' ||
-        cleanPass === 'admin123';
-
-      const isPasswordValid =
-        Boolean(authUser) ||
-        (matchedUser && (
-          matchedUser.password === cleanPass ||
-          matchedUser.password === pass ||
-          isMasterPass ||
-          !matchedUser.password
-        ));
-
-      if (matchedUser && isPasswordValid) {
-        // If password was updated with a valid new password, save it
-        if (!matchedUser.password || isMasterPass) {
-          matchedUser = { ...matchedUser, password: cleanPass || matchedUser.password || 'Shal@2026' };
-        }
-
-        // Proactively seed into Supabase Auth in background if not yet created in auth.users
-        if (!authUser) {
-          signUpWithEmail(
-            cleanEmail,
-            cleanPass || 'Shal@2026',
-            matchedUser.name,
-            matchedUser.roleIds.includes('role-founder') ? 'owner' : 'member'
-          ).catch((e) => console.log('[Supabase auto-signup notice]:', e?.message));
-        }
-
-        // Also upsert profile into public.profiles to guarantee DB sync
-        upsertSupabaseProfile(userToProfile(matchedUser)).catch((e) =>
-          console.warn('[Supabase profile sync note]:', e)
-        );
-
-        // Ensure user is in state
-        setUsers((prev) => {
-          const exists = prev.some((u) => u.id === matchedUser!.id);
-          return exists ? prev.map((u) => (u.id === matchedUser!.id ? matchedUser! : u)) : [...prev, matchedUser!];
-        });
-
-        setCurrentUser(matchedUser);
-        localStorage.setItem(`${STORAGE_KEY}_active_session`, matchedUser.id);
-        localStorage.setItem(`${STORAGE_KEY}_current_user`, JSON.stringify(matchedUser));
-
-        showToast({
-          type: 'success',
-          title: 'تم تسجيل الدخول بنجاح',
-          message: `مرحباً بك مجدداً في وكالة شال، ${matchedUser.name}`,
-        });
-
-        return { success: true };
-      }
-
-      // If user was authenticated via Supabase OAuth or user existed in Supabase Auth but not directory
-      if (authUser) {
-        const newUser: User = {
-          id: authUser.id,
-          name: authUser.user_metadata?.name || cleanEmail.split('@')[0],
-          email: cleanEmail,
-          password: cleanPass,
-          roleIds: users.length === 0 ? ['role-founder'] : ['role-marketing-manager'],
-          avatar: getShalEmployeeAvatar('01', '#0F172A'),
-          employeeNumber: String(users.length + 1).padStart(2, '0'),
-          status: 'active',
-          team: users.length === 0 ? 'management' : 'operations',
-          createdAt: new Date().toISOString().slice(0, 10),
-        };
-        setUsers((prev) => [...prev.filter((u) => u.id !== newUser.id), newUser]);
-        setCurrentUser(newUser);
-        localStorage.setItem(`${STORAGE_KEY}_active_session`, newUser.id);
-        localStorage.setItem(`${STORAGE_KEY}_current_user`, JSON.stringify(newUser));
-        showToast({
-          type: 'success',
-          title: 'تم تسجيل الدخول بنجاح',
-          message: `مرحباً بك ${newUser.name}`,
-        });
-        return { success: true };
-      }
-
-      // Clear, precise Arabic error feedback
-      if (!matchedUser) {
-        return {
-          success: false,
-          error: 'البريد الإلكتروني غير مسجل في منظومة الوكالة. يرجى مراجعة إدارة شال أو الفاوندر لإضافة حسابك.',
-        };
-      }
-
+    if (!cleanEmail || !cleanPass) {
       return {
         success: false,
-        error: 'كلمة المرور غير صحيحة لهذا الحساب. يرجى مراجعة الإدارة أو استخدام كلمة مرور الوكالة المعتمدة.',
+        error: 'يرجى إدخال البريد الإلكتروني وكلمة المرور.',
       };
+    }
+
+    try {
+      // 1. Strictly authenticate credentials with Supabase Auth
+      const authRes = await signInWithEmail(cleanEmail, cleanPass);
+      if (!authRes.success || !authRes.user || !authRes.session) {
+        return {
+          success: false,
+          error: authRes.error || 'البريد الإلكتروني أو كلمة المرور غير صحيحة.',
+        };
+      }
+
+      const authUser = authRes.user;
+
+      // 2. Load the authenticated user's profile from public.profiles
+      let activeProfile = authRes.profile;
+      if (!activeProfile) {
+        const { data: fetchedProf } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', authUser.id)
+          .maybeSingle();
+        activeProfile = fetchedProf;
+      }
+
+      if (!activeProfile) {
+        // Check by email to see if record exists under legacy ID
+        const { data: profByEmail } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('email', cleanEmail)
+          .maybeSingle();
+
+        if (profByEmail) {
+          activeProfile = profByEmail;
+          if (profByEmail.id !== authUser.id) {
+            try {
+              await supabase.from('profiles').update({ id: authUser.id }).eq('email', cleanEmail);
+            } catch {
+              // Non-fatal
+            }
+            activeProfile.id = authUser.id;
+          }
+        } else {
+          // Provision initial profile
+          const defaultRole: AppRole =
+            cleanEmail === 'm.m.s.ramzy3333@gmail.com' || cleanEmail === 'medhat.nabdalwusul@gmail.com'
+              ? 'owner'
+              : 'member';
+
+          const newProf: DbProfile = {
+            id: authUser.id,
+            email: cleanEmail,
+            name: authUser.user_metadata?.name || cleanEmail.split('@')[0],
+            role: defaultRole,
+            employee_number: '01',
+            team: 'operations',
+            status: 'active',
+          };
+
+          await upsertSupabaseProfile(newProf).catch(() => {});
+          activeProfile = newProf;
+        }
+      }
+
+      if (activeProfile && activeProfile.status === 'inactive') {
+        await signOutUser();
+        return {
+          success: false,
+          error: 'تم تعطيل هذا الحساب من قِبل إدارة الوكالة.',
+        };
+      }
+
+      const userModel = profileToUser(activeProfile);
+
+      setCurrentUser(userModel);
+      setUsers((prev) => {
+        const exists = prev.some((u) => u.id === userModel.id);
+        return exists ? prev.map((u) => (u.id === userModel.id ? userModel : u)) : [userModel, ...prev];
+      });
+
+      localStorage.setItem(`${STORAGE_KEY}_active_session`, userModel.id);
+      localStorage.setItem(`${STORAGE_KEY}_current_user`, JSON.stringify(userModel));
+
+      showToast({
+        type: 'success',
+        title: 'تم تسجيل الدخول بنجاح',
+        message: `مرحباً بك مجدداً في وكالة شال، ${userModel.name}`,
+      });
+
+      return { success: true };
     } catch (err: any) {
-      console.error('[Supabase Auth Exception]:', err);
-      return { success: false, error: err?.message || 'حدث خطأ أثناء تسجيل الدخول.' };
+      console.error('[Supabase Auth Exception]:', err?.message || err);
+      return {
+        success: false,
+        error: 'حدث خطأ غير متوقع أثناء تسجيل الدخول. يرجى التحقق من اتصالك بالإنترنت.',
+      };
     }
   };
 
@@ -2132,54 +2186,70 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setRoles((prev) => prev.filter((r) => r.id !== roleId));
   };
 
-  const addUser = async (userData: Omit<User, 'id' | 'createdAt'>) => {
-    // Strictly Owner Only: Only Shal Agency Founder is authorized to provision and onboard team members
-    if (!isOwner && users.length > 0) {
+  const addUser = async (userData: Omit<User, 'id' | 'createdAt'>): Promise<{ success: boolean; error?: string }> => {
+    // Strictly Owner / Management Only
+    if (!isAdminOrOwner && users.length > 0) {
+      const err = 'إضافة أعضاء جدد للفريق وتحديد صلاحياتهم مقتصر حصرياً على الإدارة والمالك.';
       showToast({
         type: 'error',
         title: 'غير مصرح بالإجراء',
-        message: 'إضافة أعضاء جدد للفريق وتحديد صلاحياتهم مقتصر حصرياً على المالك (الفاوندر).',
+        message: err,
       });
-      return;
+      return { success: false, error: err };
     }
 
     const empNum = userData.employeeNumber || String(users.length + 1).padStart(2, '0');
-    const newUserId = `user-${Date.now()}`;
     const targetRole = userData.roleIds[0] || 'role-marketing-manager';
     const appRole = mapRoleToSupabaseRole(targetRole);
 
-    const newUser: User = {
-      ...userData,
-      id: newUserId,
-      employeeNumber: empNum,
-      createdAt: new Date().toISOString().slice(0, 10),
-      avatar: userData.avatar || getShalEmployeeAvatar(empNum, '#0F172A'),
-    };
-
-    setUsers((prev) => [...prev.filter((u) => u.id !== newUser.id), newUser]);
-
-    // Provision into Supabase Profiles table
     try {
-      await upsertSupabaseProfile({
-        id: newUserId,
-        name: newUser.name,
-        email: newUser.email,
+      // Call privileged server / edge function to create real Auth user & linked profile
+      const res = await adminCreateUserAccount({
+        name: userData.name.trim(),
+        email: userData.email.trim().toLowerCase(),
+        password: (userData as any).password || 'Shal@2026',
         role: appRole,
-        employee_number: empNum,
-        team: newUser.team,
-        avatar: newUser.avatar,
-        status: 'active',
+        employeeNumber: empNum,
+        team: userData.team,
       });
-    } catch (err) {
-      console.warn('[Supabase Profile Upsert note]:', err);
-    }
 
-    logActivity('سجل عضواً جديداً في الفريق وأصدر بيانات دخوله', 'Onboarded new team member account', 'member', newUser.name);
-    showToast({
-      type: 'success',
-      title: 'تمت إضافة العضو وتثبيت حسابه',
-      message: `${newUser.name} (${newUser.email})`,
-    });
+      if (!res.success || !res.user) {
+        showToast({
+          type: 'error',
+          title: 'فشل إنشاء الحساب',
+          message: res.error || 'تعذر إنشاء الحساب في Supabase.',
+        });
+        return { success: false, error: res.error || 'فشل إنشاء الحساب.' };
+      }
+
+      const newUser: User = {
+        ...userData,
+        id: res.user.id,
+        email: userData.email.trim().toLowerCase(),
+        employeeNumber: empNum,
+        createdAt: new Date().toISOString().slice(0, 10),
+        avatar: userData.avatar || getShalEmployeeAvatar(empNum, '#0F172A'),
+      };
+
+      setUsers((prev) => [...prev.filter((u) => u.id !== newUser.id), newUser]);
+
+      logActivity('سجل عضواً جديداً في الفريق وأصدر بيانات دخوله', 'Onboarded new team member account', 'member', newUser.name);
+      showToast({
+        type: 'success',
+        title: 'تمت إضافة العضو وتثبيت حسابه',
+        message: `${newUser.name} (${newUser.email})`,
+      });
+
+      return { success: true };
+    } catch (err: any) {
+      const errorMsg = err?.message || 'حدث خطأ غير متوقع أثناء إضافة العضو.';
+      showToast({
+        type: 'error',
+        title: 'خطأ في المعالجة',
+        message: errorMsg,
+      });
+      return { success: false, error: errorMsg };
+    }
   };
 
   const updateUser = async (userId: string, updates: Partial<User>) => {
@@ -2467,6 +2537,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
   };
 
+  const updateChannelMembers = (channelId: string, allowedMemberIds: string[]) => {
+    setChatChannels((prev) => {
+      const updated = prev.map((c) => (c.id === channelId ? { ...c, allowedMemberIds } : c));
+      try {
+        localStorage.setItem(`${STORAGE_KEY}_chat_channels`, JSON.stringify(updated));
+      } catch {
+        // Ignore
+      }
+      return updated;
+    });
+    showToast({
+      type: 'success',
+      title: 'تم تحديث أعضاء القناة',
+      message: 'تم حفظ قائمة الأعضاء المصرح لهم بالدخول للقناة بنجاح.',
+    });
+  };
+
   // Presence and custom asset sync
   useEffect(() => {
     localStorage.setItem(`${STORAGE_KEY}_user_presence`, JSON.stringify(userPresence));
@@ -2659,12 +2746,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         toggleMessageReaction,
         deleteChatMessage,
         togglePinChatMessage,
+        updateChannelMembers,
         notifications,
         activityLogs,
         activeTab,
         setActiveTab,
         language,
         setLanguage,
+        theme,
+        toggleTheme,
         userPresence,
         updateUserPresence,
         customAssets,

@@ -25,6 +25,10 @@ import {
   EyeOff,
   Copy,
   History,
+  CheckCircle2,
+  AlertTriangle,
+  ShieldAlert,
+  Database,
 } from 'lucide-react';
 
 import { AssetCustomizerView } from './AssetCustomizerView';
@@ -74,6 +78,8 @@ export const RbacSettingsView: React.FC = () => {
   const [userTeam, setUserTeam] = useState<any>('operations');
   const [userRoleId, setUserRoleId] = useState(roles[0]?.id || 'role-founder');
   const [revealedPasswords, setRevealedPasswords] = useState<Record<string, boolean>>({});
+  const [isCreatingUser, setIsCreatingUser] = useState(false);
+  const [createUserError, setCreateUserError] = useState<string | null>(null);
 
   // Edit User modal (Admin / Management)
   const [userToEdit, setUserToEdit] = useState<User | null>(null);
@@ -154,13 +160,16 @@ export const RbacSettingsView: React.FC = () => {
     setNewRoleDesc('');
   };
 
-  const handleCreateUser = (e: React.FormEvent) => {
+  const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isOwner) return;
     if (!userName.trim()) return;
 
+    setIsCreatingUser(true);
+    setCreateUserError(null);
+
     const empNum = userEmployeeNumber.trim() || String(users.length + 1).padStart(2, '0');
-    addUser({
+    const success = await addUser({
       name: userName.trim(),
       email: userEmail.trim() || `${userName.toLowerCase().replace(/\s+/g, '')}@shal.agency`,
       password: userPassword || 'Shal@2026',
@@ -170,11 +179,22 @@ export const RbacSettingsView: React.FC = () => {
       status: 'active',
     });
 
-    setIsAddUserOpen(false);
-    setUserName('');
-    setUserEmail('');
-    setUserEmployeeNumber('');
-    setUserPassword('Shal@2026');
+    setIsCreatingUser(false);
+
+    if (success) {
+      setIsAddUserOpen(false);
+      setUserName('');
+      setUserEmail('');
+      setUserEmployeeNumber('');
+      setUserPassword('Shal@2026');
+      setCreateUserError(null);
+    } else {
+      setCreateUserError(
+        language === 'ar'
+          ? 'تعذر إنشاء الحساب في Supabase Auth. تحقق من اتصال الخادم وإعدادات SUPABASE_SERVICE_ROLE_KEY.'
+          : 'Failed to create user in Supabase Auth. Check server connection and SUPABASE_SERVICE_ROLE_KEY configuration.'
+      );
+    }
   };
 
   const pendingApprovals = profileRequests.filter((r) => r.status === 'pending');
@@ -314,6 +334,38 @@ export const RbacSettingsView: React.FC = () => {
                 <p className="mt-1 text-[11px] text-slate-500 leading-relaxed line-clamp-2">
                   {language === 'ar' ? r.descriptionAr || r.description : r.description}
                 </p>
+
+                {/* Visual Active Permissions Indicator */}
+                <div className="mt-2.5 pt-2 border-t border-slate-200/60">
+                  <div className="flex items-center justify-between text-[10px] font-semibold text-slate-500 mb-1">
+                    <span className="flex items-center gap-1">
+                      <ShieldCheck className="h-3 w-3 text-emerald-600" />
+                      <span>{language === 'ar' ? 'صلاحيات نشطة:' : 'Active Perms:'}</span>
+                    </span>
+                    <span className="font-bold text-slate-800">
+                      {r.permissions.length}/{permissions.length}
+                    </span>
+                  </div>
+                  <div className="w-full bg-slate-200/80 rounded-full h-1.5 overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all duration-300"
+                      style={{
+                        width: `${Math.max(8, Math.round((r.permissions.length / (permissions.length || 1)) * 100))}%`,
+                        backgroundColor: r.color,
+                      }}
+                    />
+                  </div>
+                  <div className="mt-1.5 flex items-center justify-between text-[9px]">
+                    <span className={r.id === 'role-super-admin' || r.id === 'role-founder' ? 'font-bold text-purple-700' : 'text-slate-500'}>
+                      {r.id === 'role-super-admin' || r.id === 'role-founder'
+                        ? language === 'ar' ? 'وصول شامل (Admin Bypass)' : 'Full Admin Bypass'
+                        : language === 'ar' ? 'حماية RLS مقيدة' : 'RLS Protected'}
+                    </span>
+                    <span className="font-semibold text-slate-400">
+                      {Math.round((r.permissions.length / (permissions.length || 1)) * 100)}%
+                    </span>
+                  </div>
+                </div>
               </div>
             );
           })}
@@ -421,12 +473,42 @@ export const RbacSettingsView: React.FC = () => {
 
                 return (
                   <div key={cat.id} className="rounded-xl border border-slate-100 bg-slate-50/50 p-4">
-                    <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-200/60">
-                      <CatIcon className="h-4 w-4 text-indigo-600" />
-                      <h4 className="text-xs font-bold text-slate-800">
-                        {language === 'ar' ? cat.labelAr : cat.labelEn}
-                      </h4>
-                    </div>
+                    {(() => {
+                      const activeInCat = catPermissions.filter((p) => selectedRole.permissions.includes(p.key)).length;
+                      const allActive = activeInCat === catPermissions.length && catPermissions.length > 0;
+                      const someActive = activeInCat > 0 && !allActive;
+
+                      return (
+                        <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-200/60">
+                          <div className="flex items-center gap-2">
+                            <CatIcon className="h-4 w-4 text-indigo-600" />
+                            <h4 className="text-xs font-bold text-slate-800">
+                              {language === 'ar' ? cat.labelAr : cat.labelEn}
+                            </h4>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span
+                              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                allActive
+                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                  : someActive
+                                  ? 'bg-indigo-100 text-indigo-800 border border-indigo-200'
+                                  : 'bg-slate-100 text-slate-500'
+                              }`}
+                            >
+                              {allActive ? (
+                                <CheckCircle2 className="h-3 w-3 text-emerald-600" />
+                              ) : (
+                                <span className={`h-1.5 w-1.5 rounded-full ${someActive ? 'bg-indigo-600' : 'bg-slate-400'}`} />
+                              )}
+                              <span>
+                                {activeInCat} / {catPermissions.length} {language === 'ar' ? 'مفعلة' : 'active'}
+                              </span>
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })()}
 
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                       {catPermissions.map((perm) => {
@@ -593,9 +675,27 @@ export const RbacSettingsView: React.FC = () => {
                       ))}
                     </div>
 
+                    {/* Active Permissions & Database Access Badge */}
+                    {(() => {
+                      const primaryRole = userRolesList[0] || roles[0];
+                      const activeCount = primaryRole?.permissions?.length || 0;
+                      return (
+                        <div className="mt-2.5 flex items-center justify-between rounded-xl bg-slate-50 px-2.5 py-1.5 border border-slate-200/70 text-[11px]">
+                          <span className="flex items-center gap-1.5 text-slate-600 font-medium">
+                            <ShieldCheck className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                            <span>{language === 'ar' ? 'صلاحيات Supabase:' : 'Database Perms:'}</span>
+                          </span>
+                          <span className="inline-flex items-center gap-1 font-bold text-slate-800">
+                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                            <span>{activeCount} {language === 'ar' ? 'صلاحية RLS نشطة' : 'Active'}</span>
+                          </span>
+                        </div>
+                      );
+                    })()}
+
                     {/* Super Admin Credential View */}
                     {canManageMembers && (
-                      <div className="mt-3 rounded-lg bg-slate-50 border border-slate-200/80 p-2 flex items-center justify-between text-xs">
+                      <div className="mt-2.5 rounded-lg bg-slate-50 border border-slate-200/80 p-2 flex items-center justify-between text-xs">
                         <div className="flex items-center gap-1.5 text-slate-600">
                           <Key className="h-3 w-3 text-slate-400" />
                           <span className="text-[11px] text-slate-500 font-medium">
@@ -645,14 +745,10 @@ export const RbacSettingsView: React.FC = () => {
 
                   {/* Actions */}
                   <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3">
-                    <button
-                      onClick={() => setCurrentUser(user)}
-                      className="text-xs font-bold text-[#4C5540] hover:text-[#3B4432] flex items-center gap-1 cursor-pointer"
-                      title="تجربة النظام بصلاحيات هذا الموظف"
-                    >
-                      <Sparkles className="h-3 w-3" />
-                      {language === 'ar' ? 'تبديل الحساب' : 'Switch'}
-                    </button>
+                    <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-500">
+                      <span className={`h-2 w-2 rounded-full ${user.status === 'active' ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+                      {user.status === 'active' ? (language === 'ar' ? 'حساب نشط' : 'Active') : (language === 'ar' ? 'معلق' : 'Inactive')}
+                    </span>
 
                     <div className="flex items-center gap-1">
                       {canManageMembers && (
@@ -667,10 +763,11 @@ export const RbacSettingsView: React.FC = () => {
                             setEditUserRoleId(user.roleIds[0] || roles[0]?.id || 'role-founder');
                             setEditUserPassword(user.password || '');
                           }}
-                          className="btn-interactive rounded-lg p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
-                          title={language === 'ar' ? 'تعديل بيانات الحساب' : 'Edit Member Details'}
+                          className="btn-interactive flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-slate-600 hover:text-blue-600 hover:bg-blue-50 border border-slate-200 transition-colors cursor-pointer"
+                          title={language === 'ar' ? 'إدارة العضو وصلاحيات قاعدة البيانات' : 'Manage Member & Database Roles'}
                         >
-                          <Edit2 className="h-3.5 w-3.5" />
+                          <Edit2 className="h-3.5 w-3.5 text-blue-600" />
+                          <span>{language === 'ar' ? 'إدارة العضو' : 'Manage'}</span>
                         </button>
                       )}
 
@@ -1142,19 +1239,38 @@ export const RbacSettingsView: React.FC = () => {
                 </div>
               </div>
 
+              {createUserError && (
+                <div className="rounded-xl border border-rose-200 bg-rose-50 p-2.5 text-xs text-rose-700 flex items-start gap-2">
+                  <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-rose-600" />
+                  <span>{createUserError}</span>
+                </div>
+              )}
+
               <div className="flex items-center justify-end gap-2 border-t border-slate-100 pt-3">
                 <button
                   type="button"
-                  onClick={() => setIsAddUserOpen(false)}
-                  className="btn-interactive rounded-xl border border-slate-200 px-3.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                  disabled={isCreatingUser}
+                  onClick={() => {
+                    setIsAddUserOpen(false);
+                    setCreateUserError(null);
+                  }}
+                  className="btn-interactive rounded-xl border border-slate-200 px-3.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer disabled:opacity-50"
                 >
                   {language === 'ar' ? 'إلغاء' : 'Cancel'}
                 </button>
                 <button
                   type="submit"
-                  className="btn-interactive rounded-xl bg-[#4C5540] px-4 py-1.5 text-xs font-bold text-white hover:bg-[#3B4432] shadow-xs cursor-pointer"
+                  disabled={isCreatingUser}
+                  className="btn-interactive rounded-xl bg-[#4C5540] px-4 py-1.5 text-xs font-bold text-white hover:bg-[#3B4432] shadow-xs cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
                 >
-                  {language === 'ar' ? 'اعتماد وإضافة الحساب' : 'Provision Member'}
+                  {isCreatingUser ? (
+                    <>
+                      <span className="h-3.5 w-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>{language === 'ar' ? 'جارٍ الإنشاء والتوثيق...' : 'Provisioning...'}</span>
+                    </>
+                  ) : (
+                    <span>{language === 'ar' ? 'اعتماد وإضافة الحساب' : 'Provision Member'}</span>
+                  )}
                 </button>
               </div>
             </form>
@@ -1350,158 +1466,269 @@ export const RbacSettingsView: React.FC = () => {
         </div>
       )}
 
-      {/* Edit User Account Modal (Admin/Management only) */}
-      {userToEdit && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-slate-200">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2 text-slate-900">
-                <div className="p-2 rounded-xl bg-blue-50 text-blue-600">
-                  <Edit2 className="h-5 w-5" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900">
-                    {language === 'ar' ? 'تعديل بيانات حساب العضو' : 'Edit Member Account'}
-                  </h3>
-                  <p className="text-xs text-slate-500">{userToEdit.email}</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setUserToEdit(null)}
-                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 cursor-pointer"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
+      {/* Clean Manage Member Modal with Database Restrictions & Permissions Diff */}
+      {userToEdit && (() => {
+        const currentRole = roles.find((r) => userToEdit.roleIds.includes(r.id)) || roles[0];
+        const targetRole = roles.find((r) => r.id === editUserRoleId) || currentRole;
+        const isRoleChanged = currentRole.id !== targetRole.id;
 
-            <form
-              onSubmit={async (e) => {
-                e.preventDefault();
-                await updateUserAccount(userToEdit.id, {
-                  name: editUserName,
-                  email: editUserEmail,
-                  employeeNumber: editUserEmpNum,
-                  team: editUserTeam,
-                  roleId: editUserRoleId,
-                  password: editUserPassword ? editUserPassword : undefined,
-                });
-                setUserToEdit(null);
-              }}
-              className="mt-4 space-y-3.5"
-            >
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  {language === 'ar' ? 'الاسم الكامل' : 'Full Name'}
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={editUserName}
-                  onChange={(e) => setEditUserName(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-900 focus:border-[#4C5540] focus:ring-1 focus:ring-[#4C5540] focus:outline-none"
-                />
-              </div>
+        // Permissions comparison
+        const currentPermKeys = new Set(currentRole.permissions);
+        const targetPermKeys = new Set(targetRole.permissions);
+        const grantedPerms = permissions.filter((p) => targetPermKeys.has(p.key) && !currentPermKeys.has(p.key));
+        const revokedPerms = permissions.filter((p) => currentPermKeys.has(p.key) && !targetPermKeys.has(p.key));
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    {language === 'ar' ? 'البريد الإلكتروني' : 'Email Address'}
-                  </label>
-                  <input
-                    type="email"
-                    required
-                    value={editUserEmail}
-                    onChange={(e) => setEditUserEmail(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-900 focus:border-[#4C5540] focus:ring-1 focus:ring-[#4C5540] focus:outline-none"
+        const isSuperAdminTarget = targetRole.id === 'role-super-admin' || targetRole.id === 'role-founder';
+        const isOpsTarget = targetRole.id === 'role-operations-manager' || targetRole.id === 'role-client-manager';
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs animate-in fade-in duration-150 overflow-y-auto">
+            <div className="w-full max-w-lg rounded-2xl bg-white p-5 sm:p-6 shadow-2xl border border-slate-200 my-8">
+              {/* Header */}
+              <div className="flex items-center justify-between pb-3.5 border-b border-slate-100">
+                <div className="flex items-center gap-3">
+                  <img
+                    src={userToEdit.avatar}
+                    alt={userToEdit.name}
+                    className="h-10 w-10 rounded-full object-cover border-2 border-slate-200"
                   />
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                      <span>{language === 'ar' ? 'إدارة العضو وصلاحيات قاعدة البيانات' : 'Manage Member & DB Access'}</span>
+                    </h3>
+                    <p className="text-[11px] text-slate-500 font-mono">{userToEdit.email}</p>
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    {language === 'ar' ? 'كود الموظف' : 'Employee ID'}
-                  </label>
-                  <input
-                    type="text"
-                    value={editUserEmpNum}
-                    onChange={(e) => setEditUserEmpNum(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-900 focus:border-[#4C5540] focus:ring-1 focus:ring-[#4C5540] focus:outline-none font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    {language === 'ar' ? 'القسم / الفريق' : 'Department'}
-                  </label>
-                  <select
-                    value={editUserTeam}
-                    onChange={(e) => setEditUserTeam(e.target.value as any)}
-                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-900 focus:border-[#4C5540] focus:ring-1 focus:ring-[#4C5540] focus:outline-none bg-white cursor-pointer"
-                  >
-                    <option value="management">{language === 'ar' ? 'الإدارة العامة' : 'Management'}</option>
-                    <option value="marketing">{language === 'ar' ? 'التسويق' : 'Marketing'}</option>
-                    <option value="sales">{language === 'ar' ? 'المبيعات' : 'Sales'}</option>
-                    <option value="operations">{language === 'ar' ? 'العمليات' : 'Operations'}</option>
-                    <option value="content">{language === 'ar' ? 'المحتوى' : 'Content'}</option>
-                    <option value="social">{language === 'ar' ? 'سوشيال ميديا' : 'Social Media'}</option>
-                    <option value="uiux">{language === 'ar' ? 'تصميم UI/UX' : 'UI/UX Design'}</option>
-                    <option value="developer">{language === 'ar' ? 'البرمجة' : 'Development'}</option>
-                    <option value="seo">{language === 'ar' ? 'سيو (SEO)' : 'SEO'}</option>
-                    <option value="media_buying">{language === 'ar' ? 'ميديا باينج' : 'Media Buying'}</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    {language === 'ar' ? 'الدور الوظيفي والصلاحيات' : 'Assigned Role'}
-                  </label>
-                  <select
-                    value={editUserRoleId}
-                    onChange={(e) => setEditUserRoleId(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-900 focus:border-[#4C5540] focus:ring-1 focus:ring-[#4C5540] focus:outline-none bg-white cursor-pointer"
-                  >
-                    {roles.map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {language === 'ar' ? r.nameAr : r.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  {language === 'ar' ? 'تحديث كلمة المرور (اختياري)' : 'New Password (Optional)'}
-                </label>
-                <input
-                  type="text"
-                  placeholder={language === 'ar' ? 'اتركه فارغاً للاحتفاظ بكلمة المرور الحالية' : 'Leave blank to keep current'}
-                  value={editUserPassword}
-                  onChange={(e) => setEditUserPassword(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-900 focus:border-[#4C5540] focus:ring-1 focus:ring-[#4C5540] focus:outline-none font-mono"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setUserToEdit(null)}
-                  className="btn-interactive rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                  className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 cursor-pointer"
                 >
-                  {language === 'ar' ? 'إلغاء' : 'Cancel'}
-                </button>
-                <button
-                  type="submit"
-                  className="btn-shal-primary px-4 py-2 text-xs font-bold rounded-xl cursor-pointer"
-                >
-                  {language === 'ar' ? 'حفظ التعديلات' : 'Save Changes'}
+                  <X className="h-4 w-4" />
                 </button>
               </div>
-            </form>
+
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  await updateUserAccount(userToEdit.id, {
+                    name: editUserName,
+                    email: editUserEmail,
+                    employeeNumber: editUserEmpNum,
+                    team: editUserTeam,
+                    roleId: editUserRoleId,
+                    password: editUserPassword ? editUserPassword : undefined,
+                  });
+                  setUserToEdit(null);
+                }}
+                className="mt-4 space-y-4"
+              >
+                {/* Basic info */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      {language === 'ar' ? 'الاسم الكامل' : 'Full Name'}
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={editUserName}
+                      onChange={(e) => setEditUserName(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 px-3 py-1.5 text-xs text-slate-900 focus:border-[#4C5540] focus:ring-1 focus:ring-[#4C5540] focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      {language === 'ar' ? 'البريد الإلكتروني' : 'Email Address'}
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      value={editUserEmail}
+                      onChange={(e) => setEditUserEmail(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 px-3 py-1.5 text-xs text-slate-900 focus:border-[#4C5540] focus:ring-1 focus:ring-[#4C5540] focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      {language === 'ar' ? 'القسم / الفريق' : 'Department'}
+                    </label>
+                    <select
+                      value={editUserTeam}
+                      onChange={(e) => setEditUserTeam(e.target.value as any)}
+                      className="w-full rounded-xl border border-slate-200 px-3 py-1.5 text-xs text-slate-900 focus:border-[#4C5540] focus:ring-1 focus:ring-[#4C5540] focus:outline-none bg-white cursor-pointer"
+                    >
+                      <option value="management">{language === 'ar' ? 'الإدارة العامة' : 'Management'}</option>
+                      <option value="marketing">{language === 'ar' ? 'التسويق' : 'Marketing'}</option>
+                      <option value="sales">{language === 'ar' ? 'المبيعات' : 'Sales'}</option>
+                      <option value="operations">{language === 'ar' ? 'العمليات' : 'Operations'}</option>
+                      <option value="content">{language === 'ar' ? 'المحتوى' : 'Content'}</option>
+                      <option value="social">{language === 'ar' ? 'سوشيال ميديا' : 'Social Media'}</option>
+                      <option value="uiux">{language === 'ar' ? 'تصميم UI/UX' : 'UI/UX Design'}</option>
+                      <option value="developer">{language === 'ar' ? 'البرمجة' : 'Development'}</option>
+                      <option value="seo">{language === 'ar' ? 'سيو (SEO)' : 'SEO'}</option>
+                      <option value="media_buying">{language === 'ar' ? 'ميديا باينج' : 'Media Buying'}</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      {language === 'ar' ? 'الدور الوظيفي والصلاحيات' : 'Assigned Role'}
+                    </label>
+                    <select
+                      value={editUserRoleId}
+                      onChange={(e) => setEditUserRoleId(e.target.value)}
+                      className="w-full rounded-xl border-2 border-indigo-200 px-3 py-1.5 text-xs font-bold text-slate-900 focus:border-[#4C5540] focus:ring-1 focus:ring-[#4C5540] focus:outline-none bg-indigo-50/40 cursor-pointer"
+                    >
+                      {roles.map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {language === 'ar' ? r.nameAr : r.name} ({r.permissions.length} {language === 'ar' ? 'صلاحية' : 'perms'})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Database-Level Access Restrictions Card */}
+                <div
+                  className={`rounded-xl p-3 border text-xs transition-colors ${
+                    isSuperAdminTarget
+                      ? 'bg-purple-50/90 border-purple-200 text-purple-900'
+                      : isOpsTarget
+                      ? 'bg-blue-50/90 border-blue-200 text-blue-900'
+                      : 'bg-emerald-50/90 border-emerald-200 text-emerald-900'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 font-bold mb-1">
+                    <Database className="h-4 w-4 shrink-0" />
+                    <span>
+                      {isSuperAdminTarget
+                        ? language === 'ar'
+                          ? 'مستوى صلاحية المشرف العام (Full DB Access & Admin Bypass)'
+                          : 'Super Admin Access Tier (Full DB Access)'
+                        : isOpsTarget
+                        ? language === 'ar'
+                          ? 'مستوى إدارة العمليات (Operations RLS Tier)'
+                          : 'Operations RLS Tier (Tasks & Clients)'
+                        : language === 'ar'
+                        ? 'مستوى العضوية المحمية بسياسات RLS (Strict Row Level Security)'
+                        : 'Standard Member Tier (Strict RLS Enforced)'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] leading-relaxed opacity-90">
+                    {isSuperAdminTarget
+                      ? language === 'ar'
+                        ? 'يمنح هذا الدور وصولاً غير مقيد لكافة جداول Supabase (profiles, tasks, teams, audit_logs) مع تجاوز سياسات RLS وإمكانية تعديل وحذف أي سجل.'
+                        : 'Grants unrestricted access across all Supabase tables, bypassing RLS and allowing full CRUD and user provisioning.'
+                      : isOpsTarget
+                      ? language === 'ar'
+                        ? 'وصول كامل لمهام الفريق والعملاء والمشاريع وسجلات التواصل، مع قيود RLS تمنع حذف حسابات المشرفين أو تعديل مصفوفة الصلاحيات العليا.'
+                        : 'Full access to tasks, clients, and projects. Protected by RLS against altering system roles or deleting admin records.'
+                      : language === 'ar'
+                      ? 'يقيد Supabase استعلامات قاعدة البيانات بالسجلات المرتبطة بالعضو مباشرة (assigned_to = auth.uid()) ومشاريع فريقه فقط، مع حظر البيانات الإدارية.'
+                      : 'PostgreSQL RLS restricts database queries strictly to records assigned to this user (assigned_to = auth.uid()) and team assignments.'}
+                  </p>
+                </div>
+
+                {/* Real-time Permissions Differential */}
+                {isRoleChanged ? (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
+                    <div className="flex items-center justify-between text-xs font-bold text-slate-800">
+                      <span>{language === 'ar' ? 'فروقات الصلاحيات المترتبة على تغيير الدور:' : 'Permission Changes Impact:'}</span>
+                      <span className="text-[10px] text-slate-500 font-normal">
+                        {currentRole.nameAr} → {targetRole.nameAr}
+                      </span>
+                    </div>
+
+                    {grantedPerms.length > 0 && (
+                      <div>
+                        <span className="text-[10px] font-bold text-emerald-700 block mb-1">
+                          + {language === 'ar' ? 'صلاحيات جديدة ستُمنح للعضو:' : 'Granted Permissions:'} ({grantedPerms.length})
+                        </span>
+                        <div className="flex flex-wrap gap-1">
+                          {grantedPerms.map((p) => (
+                            <span
+                              key={p.key}
+                              className="inline-flex items-center gap-1 rounded bg-emerald-100 text-emerald-800 px-2 py-0.5 text-[10px] font-semibold"
+                            >
+                              <CheckCircle2 className="h-2.5 w-2.5" />
+                              {language === 'ar' ? p.labelAr : p.labelEn}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {revokedPerms.length > 0 && (
+                      <div className="pt-1.5 border-t border-slate-200/60">
+                        <span className="text-[10px] font-bold text-rose-700 block mb-1">
+                          - {language === 'ar' ? 'صلاحيات سيتم سحبها من العضو:' : 'Revoked Permissions:'} ({revokedPerms.length})
+                        </span>
+                        <div className="flex flex-wrap gap-1">
+                          {revokedPerms.map((p) => (
+                            <span
+                              key={p.key}
+                              className="inline-flex items-center gap-1 rounded bg-rose-100 text-rose-800 px-2 py-0.5 text-[10px] font-semibold"
+                            >
+                              <AlertCircle className="h-2.5 w-2.5" />
+                              {language === 'ar' ? p.labelAr : p.labelEn}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2 border border-slate-200 text-xs">
+                    <span className="text-slate-600 font-medium">
+                      {language === 'ar' ? 'إجمالي الصلاحيات الفعالة بالدور المختار:' : 'Active Privileges in Role:'}
+                    </span>
+                    <span className="font-bold text-[#4C5540] bg-white px-2 py-0.5 rounded-lg border border-[#4C5540]/20">
+                      {targetRole.permissions.length} / {permissions.length} {language === 'ar' ? 'صلاحية مفعلة' : 'Active'}
+                    </span>
+                  </div>
+                )}
+
+                {/* Password optional update */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    {language === 'ar' ? 'تحديث كلمة المرور (اختياري)' : 'Update Password (Optional)'}
+                  </label>
+                  <input
+                    type="text"
+                    placeholder={language === 'ar' ? 'اتركه فارغاً للاحتفاظ بكلمة المرور الحالية' : 'Leave blank to keep current'}
+                    value={editUserPassword}
+                    onChange={(e) => setEditUserPassword(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-1.5 text-xs text-slate-900 focus:border-[#4C5540] focus:ring-1 focus:ring-[#4C5540] focus:outline-none font-mono"
+                  />
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setUserToEdit(null)}
+                    className="btn-interactive rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                  >
+                    {language === 'ar' ? 'إلغاء' : 'Cancel'}
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn-interactive flex items-center gap-1.5 rounded-xl bg-[#4C5540] px-4 py-2 text-xs font-bold text-white hover:bg-[#3B4432] shadow-xs cursor-pointer"
+                  >
+                    <Check className="h-4 w-4" />
+                    <span>{language === 'ar' ? 'حفظ وتطبيق الصلاحيات' : 'Save & Apply Role'}</span>
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Admin Reset Password Modal */}
       {userToResetPass && (
