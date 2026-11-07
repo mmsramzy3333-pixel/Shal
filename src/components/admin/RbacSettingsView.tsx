@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { Role, User, PermissionCategory } from '../../types';
+import { Role, User, PermissionCategory, AgencyTeam } from '../../types';
 import {
   ShieldCheck,
   Users,
@@ -29,9 +29,12 @@ import {
   AlertTriangle,
   ShieldAlert,
   Database,
+  Building2,
+  FolderPlus,
 } from 'lucide-react';
 
 import { AssetCustomizerView } from './AssetCustomizerView';
+import { UserManagementTable } from './UserManagementTable';
 
 export const RbacSettingsView: React.FC = () => {
   const {
@@ -59,8 +62,132 @@ export const RbacSettingsView: React.FC = () => {
     activityLogs,
   } = useApp();
 
-  const [activeTab, setActiveTab] = useState<'matrix' | 'members' | 'approvals' | 'assets' | 'audit_logs'>('matrix');
+  const [activeTab, setActiveTab] = useState<'table' | 'matrix' | 'departments' | 'members' | 'approvals' | 'assets' | 'audit_logs'>('table');
   const [selectedRole, setSelectedRole] = useState<Role>(roles[0]);
+
+  // Agency Departments & Teams Management State
+  const defaultAgencyDepartments: {
+    id: string;
+    code: string;
+    nameAr: string;
+    nameEn: string;
+    description: string;
+    leadName: string;
+    color: string;
+    isSystem?: boolean;
+  }[] = [
+    { id: 'dept-exec', code: 'management', nameAr: 'الإدارة العليا والتنفيذية', nameEn: 'Executive Board', description: 'الإشراف الاستراتيجي والقرارات التنفيذية العليا ومؤشرات الأداء', leadName: 'م. مدحت نضال | الفاوندر', color: '#0F172A', isSystem: true },
+    { id: 'dept-ops', code: 'operations', nameAr: 'العمليات والتشغيل وإدارة المشاريع', nameEn: 'Operations & Delivery', description: 'توزيع المهام ومراقبة خطوط الإنتاج والديدلاين واعتماد التسليمات', leadName: 'محمود العمليات', color: '#0284C7', isSystem: true },
+    { id: 'dept-mktg', code: 'marketing', nameAr: 'التسويق واستراتيجيات النمو', nameEn: 'Marketing & Strategy', description: 'إطلاق وتطوير الخطط التسويقية واعتماد المخرجات الإبداعية', leadName: 'سارة التسويق', color: '#8B5CF6', isSystem: true },
+    { id: 'dept-sales', code: 'sales', nameAr: 'المبيعات وتطوير الأعمال وCRM', nameEn: 'Sales & BizDev', description: 'إغلاق صفقات المبيعات وإدارة خط سير العملاء المتوقعين', leadName: 'طارق المبيعات', color: '#10B981', isSystem: true },
+    { id: 'dept-ads', code: 'media_buying', nameAr: 'الإعلانات الممولة (Media Buying)', nameEn: 'Paid Advertising', description: 'إدارة وتوسيع الحملات الممولة على ميتا وجوجل وتيك توك', leadName: 'عمر الإعلانات', color: '#EF4444', isSystem: true },
+    { id: 'dept-social', code: 'social', nameAr: 'السوشيال ميديا وإدارة المنصات', nameEn: 'Social Media & Community', description: 'جدولة ونشر المحتوى وإدارة المنصات ومراقبة التفاعل', leadName: 'ليلى السوشيال', color: '#EC4899', isSystem: true },
+    { id: 'dept-content', code: 'content', nameAr: 'كتابة المحتوى والاسكريبتات', nameEn: 'Copywriting & Scripts', description: 'صياغة النصوص الإعلانية والسيناريوهات الإبداعية وهوكات الفيديو', leadName: 'كريم المحتوى', color: '#F59E0B', isSystem: true },
+    { id: 'dept-uiux', code: 'uiux', nameAr: 'تصميم الواجهات وتجربة المستخدم (UI/UX)', nameEn: 'UI/UX & Product Design', description: 'تصميم التطبيقات والمواقع والنماذج الأولية على فيجما ونظم التصميم', leadName: 'ياسمين التصميم', color: '#6366F1', isSystem: true },
+    { id: 'dept-seo', code: 'seo', nameAr: 'تحسين محركات البحث (SEO)', nameEn: 'Search Engine Optimization', description: 'التدقيق الفني للروابط وبناء استراتيجيات الظهور العضوي', leadName: 'أحمد السيو', color: '#14B8A6', isSystem: true },
+    { id: 'dept-dev', code: 'developer', nameAr: 'البرمجة وتطوير المنصات الرقمية', nameEn: 'Web & App Development', description: 'برمجة المواقع والمنصات وصيانة التذاكر البرمجية والتكاملات', leadName: 'مصطفى البرمجة', color: '#3B82F6', isSystem: true },
+  ];
+
+  const [departments, setDepartments] = useState(() => {
+    try {
+      const saved = localStorage.getItem('shal_departments');
+      if (saved) return JSON.parse(saved);
+    } catch {
+      // fallback
+    }
+    return defaultAgencyDepartments;
+  });
+
+  const saveDepartments = (updated: typeof defaultAgencyDepartments) => {
+    setDepartments(updated);
+    try {
+      localStorage.setItem('shal_departments', JSON.stringify(updated));
+    } catch {
+      // ignore
+    }
+  };
+
+  const [isDeptModalOpen, setIsDeptModalOpen] = useState(false);
+  const [editingDept, setEditingDept] = useState<any | null>(null);
+  const [deptFormNameAr, setDeptFormNameAr] = useState('');
+  const [deptFormNameEn, setDeptFormNameEn] = useState('');
+  const [deptFormCode, setDeptFormCode] = useState('');
+  const [deptFormDesc, setDeptFormDesc] = useState('');
+  const [deptFormLead, setDeptFormLead] = useState('');
+  const [deptFormColor, setDeptFormColor] = useState('#4C5540');
+
+  // Reassign Department Member Modal
+  const [reassignUser, setReassignUser] = useState<User | null>(null);
+  const [selectedTargetTeam, setSelectedTargetTeam] = useState<AgencyTeam>('operations');
+
+  const handleOpenAddDept = () => {
+    setEditingDept(null);
+    setDeptFormNameAr('');
+    setDeptFormNameEn('');
+    setDeptFormCode('');
+    setDeptFormDesc('');
+    setDeptFormLead('');
+    setDeptFormColor('#4C5540');
+    setIsDeptModalOpen(true);
+  };
+
+  const handleOpenEditDept = (dept: any) => {
+    setEditingDept(dept);
+    setDeptFormNameAr(dept.nameAr);
+    setDeptFormNameEn(dept.nameEn);
+    setDeptFormCode(dept.code);
+    setDeptFormDesc(dept.description);
+    setDeptFormLead(dept.leadName);
+    setDeptFormColor(dept.color);
+    setIsDeptModalOpen(true);
+  };
+
+  const handleDeleteDept = (deptId: string) => {
+    const updated = departments.filter((d) => d.id !== deptId);
+    saveDepartments(updated);
+  };
+
+  const handleSaveDeptForm = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!deptFormNameAr.trim() || !deptFormCode.trim()) return;
+
+    if (editingDept) {
+      const updated = departments.map((d) =>
+        d.id === editingDept.id
+          ? {
+              ...d,
+              nameAr: deptFormNameAr.trim(),
+              nameEn: deptFormNameEn.trim() || deptFormNameAr.trim(),
+              code: deptFormCode.trim(),
+              description: deptFormDesc.trim(),
+              leadName: deptFormLead.trim(),
+              color: deptFormColor,
+            }
+          : d
+      );
+      saveDepartments(updated);
+    } else {
+      const newD = {
+        id: `dept-${Date.now()}`,
+        nameAr: deptFormNameAr.trim(),
+        nameEn: deptFormNameEn.trim() || deptFormNameAr.trim(),
+        code: deptFormCode.trim(),
+        description: deptFormDesc.trim(),
+        leadName: deptFormLead.trim(),
+        color: deptFormColor,
+        isSystem: false,
+      };
+      saveDepartments([...departments, newD]);
+    }
+    setIsDeptModalOpen(false);
+  };
+
+  const handleReassignSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reassignUser) return;
+    await updateUser(reassignUser.id, { team: selectedTargetTeam });
+    setReassignUser(null);
+  };
 
   // Add Role modal
   const [isAddRoleOpen, setIsAddRoleOpen] = useState(false);
@@ -221,33 +348,56 @@ export const RbacSettingsView: React.FC = () => {
         </div>
 
         {/* View Switcher Tabs */}
-        <div className="flex items-center rounded-xl bg-slate-100 p-1">
+        <div className="flex flex-wrap items-center rounded-xl bg-slate-100 dark:bg-[#1E251D] p-1 gap-1">
           <button
-            onClick={() => setActiveTab('matrix')}
+            type="button"
+            onClick={() => setActiveTab('table')}
             className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all cursor-pointer ${
-              activeTab === 'matrix' ? 'bg-white text-[#2563EB] shadow-xs' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Key className="h-3.5 w-3.5" />
-            {language === 'ar' ? 'مصفوفة الصلاحيات' : 'Roles Matrix'}
-          </button>
-          <button
-            onClick={() => setActiveTab('members')}
-            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all cursor-pointer ${
-              activeTab === 'members' ? 'bg-white text-[#2563EB] shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              activeTab === 'table' ? 'bg-[#4C5540] text-white shadow-xs' : 'text-slate-600 dark:text-[#BDAF9C] hover:text-slate-900'
             }`}
           >
             <Users className="h-3.5 w-3.5" />
-            {language === 'ar' ? 'حسابات الموظفين (11)' : 'Team Members'}
+            <span>{language === 'ar' ? 'جدول المستخدمين' : 'User Table'}</span>
           </button>
           <button
+            type="button"
+            onClick={() => setActiveTab('matrix')}
+            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all cursor-pointer ${
+              activeTab === 'matrix' ? 'bg-white dark:bg-[#151A14] text-[#2563EB] shadow-xs' : 'text-slate-600 dark:text-[#BDAF9C] hover:text-slate-900'
+            }`}
+          >
+            <Key className="h-3.5 w-3.5" />
+            <span>{language === 'ar' ? 'مصفوفة الصلاحيات' : 'Roles Matrix'}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('departments')}
+            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all cursor-pointer ${
+              activeTab === 'departments' ? 'bg-[#0284C7] text-white shadow-xs' : 'text-slate-600 dark:text-[#BDAF9C] hover:text-slate-900'
+            }`}
+          >
+            <Building2 className="h-3.5 w-3.5" />
+            <span>{language === 'ar' ? 'أقسام وفرق العمل' : 'Departments & Teams'}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('members')}
+            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all cursor-pointer ${
+              activeTab === 'members' ? 'bg-white dark:bg-[#151A14] text-[#2563EB] shadow-xs' : 'text-slate-600 dark:text-[#BDAF9C] hover:text-slate-900'
+            }`}
+          >
+            <ShieldCheck className="h-3.5 w-3.5" />
+            <span>{language === 'ar' ? 'بطاقات الطاقم' : 'Staff Cards'}</span>
+          </button>
+          <button
+            type="button"
             onClick={() => setActiveTab('approvals')}
             className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all cursor-pointer ${
-              activeTab === 'approvals' ? 'bg-white text-amber-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              activeTab === 'approvals' ? 'bg-white dark:bg-[#151A14] text-amber-700 shadow-xs' : 'text-slate-600 dark:text-[#BDAF9C] hover:text-slate-900'
             }`}
           >
             <Sparkles className="h-3.5 w-3.5 text-amber-500" />
-            <span>{language === 'ar' ? 'موافقات التعديل' : 'Approvals Queue'}</span>
+            <span>{language === 'ar' ? 'موافقات التعديل' : 'Approvals'}</span>
             {pendingApprovals.length > 0 && (
               <span className="rounded-full bg-amber-500 text-white px-1.5 py-0.2 text-[9px] font-black">
                 {pendingApprovals.length}
@@ -255,22 +405,24 @@ export const RbacSettingsView: React.FC = () => {
             )}
           </button>
           <button
+            type="button"
             onClick={() => setActiveTab('assets')}
             className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all cursor-pointer ${
-              activeTab === 'assets' ? 'bg-[#4C5540] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              activeTab === 'assets' ? 'bg-[#4C5540] text-white shadow-xs' : 'text-slate-600 dark:text-[#BDAF9C] hover:text-slate-900'
             }`}
           >
             <Palette className="h-3.5 w-3.5" />
-            <span>{language === 'ar' ? 'تخصيص الأيقونات والصور' : 'Custom Assets'}</span>
+            <span>{language === 'ar' ? 'الأيقونات' : 'Assets'}</span>
           </button>
           <button
+            type="button"
             onClick={() => setActiveTab('audit_logs')}
             className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all cursor-pointer ${
-              activeTab === 'audit_logs' ? 'bg-[#24291F] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              activeTab === 'audit_logs' ? 'bg-[#24291F] text-white shadow-xs' : 'text-slate-600 dark:text-[#BDAF9C] hover:text-slate-900'
             }`}
           >
             <History className="h-3.5 w-3.5 text-emerald-400" />
-            <span>{language === 'ar' ? 'سجل التدقيق (Audit Logs)' : 'Audit Logs'}</span>
+            <span>{language === 'ar' ? 'التدقيق' : 'Audit'}</span>
           </button>
         </div>
       </div>
@@ -371,6 +523,156 @@ export const RbacSettingsView: React.FC = () => {
           })}
         </div>
       </div>
+
+      {/* USER MANAGEMENT TABLE VIEW */}
+      {activeTab === 'table' && (
+        <UserManagementTable onOpenAddUser={() => setIsAddUserOpen(true)} />
+      )}
+
+      {/* DEPARTMENTS & TEAMS VIEW */}
+      {activeTab === 'departments' && (
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-slate-200 dark:border-[#2D372B] bg-white dark:bg-[#151A14] p-5 shadow-xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-[#2D372B]">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <Building2 className="h-5 w-5 text-[#0284C7]" />
+                  <span>{language === 'ar' ? 'إدارة أقسام وفرق العمل (Agency Departments & Teams)' : 'Departments & Teams'}</span>
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-[#BDAF9C] mt-1">
+                  {language === 'ar'
+                    ? 'تنظيم الأقسام التخصصية الـ 10 لوكالة شال، تعيين المسؤولين، وإسناد الموظفين للفرق لتحديد صلاحيات الوصول.'
+                    : 'Manage agency specialized departments, assign leads, and group team members.'}
+                </p>
+              </div>
+
+              {(isOwner || isAdminOrOwner) && (
+                <button
+                  type="button"
+                  onClick={handleOpenAddDept}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-[#0284C7] px-3.5 py-2 text-xs font-bold text-white hover:bg-[#0369a1] shadow-xs transition-all cursor-pointer"
+                >
+                  <Plus className="h-4 w-4" />
+                  <span>{language === 'ar' ? 'إنشاء قسم جديد' : 'Add Department'}</span>
+                </button>
+              )}
+            </div>
+
+            <div className="mt-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {departments.map((dept) => {
+                const deptMembers = users.filter((u) => u.team === dept.code);
+
+                return (
+                  <div
+                    key={dept.id}
+                    className="rounded-2xl border border-slate-200/80 dark:border-[#2D372B] bg-slate-50/50 dark:bg-[#1E251D] p-4 hover:border-slate-300 transition-all flex flex-col justify-between"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <span
+                          className="h-3 w-3 rounded-full"
+                          style={{ backgroundColor: dept.color }}
+                        />
+                        <div className="flex items-center gap-1">
+                          <span className="font-mono text-[10px] font-bold text-slate-400 bg-white dark:bg-black/20 px-2 py-0.5 rounded border border-slate-200/60 dark:border-[#2D372B]">
+                            {dept.code}
+                          </span>
+                          {(isOwner || isAdminOrOwner) && (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditDept(dept)}
+                              className="p-1 text-slate-400 hover:text-slate-700 cursor-pointer"
+                              title="تعديل القسم"
+                            >
+                              <Edit2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                          {!dept.isSystem && (isOwner || isAdminOrOwner) && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteDept(dept.id)}
+                              className="p-1 text-slate-400 hover:text-rose-600 cursor-pointer"
+                              title="حذف القسم المخصص"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <h4 className="mt-2 text-xs font-bold text-slate-900 dark:text-white">
+                        {dept.nameAr}
+                      </h4>
+                      <span className="text-[10px] text-slate-400 font-medium block">
+                        {dept.nameEn}
+                      </span>
+                      <p className="mt-1 text-[11px] text-slate-600 dark:text-[#BDAF9C] leading-relaxed line-clamp-2">
+                        {dept.description}
+                      </p>
+
+                      <div className="mt-3 pt-2.5 border-t border-slate-200/60 dark:border-[#2D372B]/60 flex items-center justify-between text-xs">
+                        <span className="text-[11px] text-slate-500 font-semibold">
+                          {language === 'ar' ? 'المسؤول:' : 'Lead:'}
+                        </span>
+                        <span className="font-bold text-slate-800 dark:text-white text-[11px]">
+                          {dept.leadName}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 pt-3 border-t border-slate-200/60 dark:border-[#2D372B]/60">
+                      <div className="flex items-center justify-between text-[11px] mb-2 font-bold text-slate-700 dark:text-slate-200">
+                        <span>{language === 'ar' ? 'أعضاء الفريق' : 'Team Members'}</span>
+                        <span className="rounded-full bg-white dark:bg-black/30 px-2 py-0.5 text-[10px] font-mono border border-slate-200/80 dark:border-[#2D372B]">
+                          {deptMembers.length} {language === 'ar' ? 'أعضاء' : 'staff'}
+                        </span>
+                      </div>
+
+                      <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                        {deptMembers.length === 0 ? (
+                          <span className="text-[10px] text-slate-400 block py-1">
+                            {language === 'ar' ? 'لا يوجد موظفون في هذا القسم حالياً.' : 'No members assigned.'}
+                          </span>
+                        ) : (
+                          deptMembers.map((m) => (
+                            <div
+                              key={m.id}
+                              className="flex items-center justify-between p-1.5 rounded-lg bg-white dark:bg-[#151A14] border border-slate-200/50 dark:border-[#2D372B] text-[11px]"
+                            >
+                              <div className="flex items-center gap-1.5 truncate">
+                                <img
+                                  src={m.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${m.id}`}
+                                  alt={m.name}
+                                  className="h-5 w-5 rounded-full object-cover shrink-0"
+                                />
+                                <span className="font-semibold text-slate-800 dark:text-white truncate">
+                                  {m.name}
+                                </span>
+                              </div>
+                              {(isOwner || isAdminOrOwner) && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setReassignUser(m);
+                                    setSelectedTargetTeam((dept.code as AgencyTeam) || 'operations');
+                                  }}
+                                  className="text-[10px] text-[#0284C7] hover:underline shrink-0 font-bold cursor-pointer"
+                                >
+                                  {language === 'ar' ? 'نقل' : 'Move'}
+                                </button>
+                              )}
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MATRIX VIEW */}
       {activeTab === 'matrix' && (
@@ -1836,6 +2138,191 @@ export const RbacSettingsView: React.FC = () => {
                   className="btn-shal-primary px-4 py-2 text-xs font-bold rounded-xl cursor-pointer disabled:opacity-60"
                 >
                   {isResetting ? (language === 'ar' ? 'جارٍ التحديث...' : 'Saving...') : (language === 'ar' ? 'تأكيد التغيير' : 'Reset Password')}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Add / Edit Department Modal */}
+      {isDeptModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-[#151A14] p-5 shadow-2xl border border-slate-200 dark:border-[#2D372B]">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-[#2D372B]">
+              <div className="flex items-center gap-2">
+                <Building2 className="h-5 w-5 text-[#0284C7]" />
+                <h3 className="font-bold text-sm text-slate-900 dark:text-white">
+                  {editingDept
+                    ? language === 'ar' ? 'تعديل بيانات القسم' : 'Edit Department'
+                    : language === 'ar' ? 'إنشاء قسم جديد' : 'New Department'}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsDeptModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveDeptForm} className="mt-4 space-y-3 text-xs">
+              <div>
+                <label className="font-bold text-slate-700 dark:text-slate-200 block mb-1">
+                  {language === 'ar' ? 'اسم القسم بالعربية *' : 'Department Name (Arabic) *'}
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={deptFormNameAr}
+                  onChange={(e) => setDeptFormNameAr(e.target.value)}
+                  placeholder="مثال: إدارة الإنتاج الإبداعي"
+                  className="w-full rounded-xl border border-slate-200 dark:border-[#2D372B] bg-slate-50 dark:bg-[#1E251D] p-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#0284C7]"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 dark:text-slate-200 block mb-1">
+                  {language === 'ar' ? 'اسم القسم بالإنجليزية' : 'Department Name (English)'}
+                </label>
+                <input
+                  type="text"
+                  value={deptFormNameEn}
+                  onChange={(e) => setDeptFormNameEn(e.target.value)}
+                  placeholder="e.g. Creative Production"
+                  className="w-full rounded-xl border border-slate-200 dark:border-[#2D372B] bg-slate-50 dark:bg-[#1E251D] p-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#0284C7]"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 dark:text-slate-200 block mb-1">
+                  {language === 'ar' ? 'رمز القسم التعريفي (Code) *' : 'Department Code *'}
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={deptFormCode}
+                  onChange={(e) => setDeptFormCode(e.target.value.toLowerCase().replace(/\s+/g, '_'))}
+                  placeholder="e.g. creative_media"
+                  className="w-full rounded-xl border border-slate-200 dark:border-[#2D372B] bg-slate-50 dark:bg-[#1E251D] p-2.5 font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#0284C7]"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 dark:text-slate-200 block mb-1">
+                  {language === 'ar' ? 'المسؤول / قائد الفريق' : 'Team Lead'}
+                </label>
+                <input
+                  type="text"
+                  value={deptFormLead}
+                  onChange={(e) => setDeptFormLead(e.target.value)}
+                  placeholder="مثال: أحمد المدير الإبداعي"
+                  className="w-full rounded-xl border border-slate-200 dark:border-[#2D372B] bg-slate-50 dark:bg-[#1E251D] p-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#0284C7]"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 dark:text-slate-200 block mb-1">
+                  {language === 'ar' ? 'وصف المهام والاختصاص' : 'Description'}
+                </label>
+                <textarea
+                  rows={2}
+                  value={deptFormDesc}
+                  onChange={(e) => setDeptFormDesc(e.target.value)}
+                  placeholder="وصف موجز للمهام ونطاق عمل هذا القسم..."
+                  className="w-full rounded-xl border border-slate-200 dark:border-[#2D372B] bg-slate-50 dark:bg-[#1E251D] p-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#0284C7]"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 dark:text-slate-200 block mb-1">
+                  {language === 'ar' ? 'اللون المميز للقسم' : 'Brand Color'}
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={deptFormColor}
+                    onChange={(e) => setDeptFormColor(e.target.value)}
+                    className="h-9 w-12 rounded-lg border border-slate-200 dark:border-[#2D372B] cursor-pointer bg-transparent"
+                  />
+                  <span className="font-mono text-xs text-slate-500">{deptFormColor}</span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-[#2D372B]">
+                <button
+                  type="button"
+                  onClick={() => setIsDeptModalOpen(false)}
+                  className="rounded-xl border border-slate-200 dark:border-[#2D372B] px-4 py-2 text-xs font-semibold text-slate-700 dark:text-[#BDAF9C] hover:bg-slate-50 cursor-pointer"
+                >
+                  {language === 'ar' ? 'إلغاء' : 'Cancel'}
+                </button>
+                <button
+                  type="submit"
+                  className="rounded-xl bg-[#0284C7] px-4 py-2 text-xs font-bold text-white hover:bg-[#0369a1] cursor-pointer"
+                >
+                  {language === 'ar' ? 'حفظ القسم' : 'Save Department'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Reassign Member Modal */}
+      {reassignUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="w-full max-w-sm rounded-2xl bg-white dark:bg-[#151A14] p-5 shadow-2xl border border-slate-200 dark:border-[#2D372B]">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-[#2D372B]">
+              <h3 className="font-bold text-sm text-slate-900 dark:text-white">
+                {language === 'ar' ? 'نقل الموظف لقسم آخر' : 'Reassign Department'}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setReassignUser(null)}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleReassignSubmit} className="mt-4 space-y-3 text-xs">
+              <p className="text-slate-600 dark:text-[#BDAF9C]">
+                {language === 'ar'
+                  ? `اختر القسم المستهدف للموظف: ${reassignUser.name}`
+                  : `Select target department for ${reassignUser.name}:`}
+              </p>
+
+              <div>
+                <label className="font-bold text-slate-700 dark:text-slate-200 block mb-1">
+                  {language === 'ar' ? 'القسم المستهدف' : 'Target Department'}
+                </label>
+                <select
+                  value={selectedTargetTeam}
+                  onChange={(e) => setSelectedTargetTeam(e.target.value as AgencyTeam)}
+                  className="w-full rounded-xl border border-slate-200 dark:border-[#2D372B] bg-slate-50 dark:bg-[#1E251D] p-2.5 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#0284C7]"
+                >
+                  {departments.map((d) => (
+                    <option key={d.id} value={d.code}>
+                      {d.nameAr} ({d.code})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-[#2D372B]">
+                <button
+                  type="button"
+                  onClick={() => setReassignUser(null)}
+                  className="rounded-xl border border-slate-200 dark:border-[#2D372B] px-3.5 py-2 text-xs font-semibold text-slate-700 dark:text-[#BDAF9C] hover:bg-slate-50 cursor-pointer"
+                >
+                  {language === 'ar' ? 'إلغاء' : 'Cancel'}
+                </button>
+                <button
+                  type="submit"
+                  className="rounded-xl bg-[#0284C7] px-4 py-2 text-xs font-bold text-white hover:bg-[#0369a1] cursor-pointer"
+                >
+                  {language === 'ar' ? 'تأكيد النقل' : 'Confirm'}
                 </button>
               </div>
             </form>

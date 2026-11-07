@@ -550,3 +550,246 @@ export interface HourlyVerification {
   responseNote?: string;
   createdAt?: string;
 }
+
+// ==============================================================================
+// FINANCIAL & COST MANAGEMENT TYPES (خاص بالإدارة والمالية)
+// ==============================================================================
+export type FinancialAccountType = 'asset' | 'liability' | 'equity' | 'revenue' | 'cogs' | 'opex';
+
+export interface FinancialAccount {
+  id: string;
+  code: string;
+  nameAr: string;
+  nameEn: string;
+  type: FinancialAccountType;
+  balance: number;
+  currency: string;
+  description?: string;
+}
+
+export type TransactionType = 'revenue' | 'cogs' | 'opex' | 'transfer';
+
+export interface FinancialTransaction {
+  id: string;
+  transactionNumber: string;
+  date: string;
+  type: TransactionType;
+  categoryAr: string;
+  categoryEn: string;
+  amount: number;
+  currency: string;
+  accountName: string;
+  description: string;
+  clientId?: string;
+  clientName?: string;
+  paymentMethod: 'bank_transfer' | 'credit_card' | 'cash' | 'crypto' | 'platform_direct';
+  status: 'completed' | 'pending' | 'reconciled';
+  attachments?: string[];
+  createdBy: string;
+}
+
+export interface InvoiceItem {
+  id: string;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  total: number;
+}
+
+export interface AgencyInvoice {
+  id: string;
+  invoiceNumber: string;
+  clientId: string;
+  clientName: string;
+  clientEmail?: string;
+  issueDate: string;
+  dueDate: string;
+  items: InvoiceItem[];
+  subtotal: number;
+  taxRate: number; // e.g. 0.15 for 15% VAT
+  taxAmount: number;
+  discount: number;
+  totalAmount: number;
+  currency: string;
+  status: 'draft' | 'issued' | 'paid' | 'overdue' | 'cancelled';
+  paidDate?: string;
+  paymentMethod?: string;
+  notes?: string;
+  terms?: string;
+}
+
+export interface CostBudget {
+  id: string;
+  departmentCode: AgencyTeam;
+  departmentNameAr: string;
+  allocatedBudget: number;
+  actualSpend: number;
+  currency: string;
+  month: string; // YYYY-MM
+  status: 'on_track' | 'warning' | 'exceeded';
+}
+
+// ==============================================================================
+// CODE OF CONDUCT (C.O.C) & ROLE-SPECIFIC KPIS TYPES
+// ==============================================================================
+export type WorkMode = 'onsite' | 'remote' | 'hybrid' | 'commission';
+
+export interface CocPillar {
+  id: string;
+  number: string;
+  titleAr: string;
+  titleEn: string;
+  summaryAr: string;
+  rulesAr: string[];
+  severity: 'critical' | 'standard' | 'operational';
+  iconName: string;
+}
+
+export interface RoleKpiMetric {
+  id: string;
+  code: string;
+  nameAr: string;
+  nameEn: string;
+  target: number;
+  current: number;
+  unit: string;
+  weight: number; // percentage weight out of 100
+  category: 'production' | 'quality' | 'punctuality' | 'revenue' | 'communication';
+  descriptionAr: string;
+}
+
+export interface RoleKpiTemplate {
+  id: string;
+  roleCode: string;
+  roleNameAr: string;
+  applicableWorkModes: WorkMode[];
+  generalDescriptionAr: string;
+  metrics: Record<WorkMode, RoleKpiMetric[]>;
+}
+
+export interface EmployeeKpiEvaluation {
+  id: string;
+  userId: string;
+  userName: string;
+  userRoleName: string;
+  userEmail: string;
+  workMode: WorkMode;
+  month: string;
+  overallScore: number; // 0 - 100
+  tier: 'distinguished' | 'excellent' | 'good' | 'needs_improvement';
+  achievedCommission?: number;
+  closedDealsValue?: number;
+  evaluatorNote: string;
+  evaluationDate: string;
+}
+
+// ==============================================================================
+// HR & TALENT OPERATIONS TYPES (نظام الموارد البشرية)
+// ==============================================================================
+export type LeaveType = 'annual' | 'sick' | 'emergency' | 'remote_work_permit' | 'unpaid';
+
+export interface LeaveRequest {
+  id: string;
+  userId: string;
+  userName: string;
+  userRole: string;
+  userTeam: AgencyTeam;
+  leaveType: LeaveType;
+  startDate: string;
+  endDate: string;
+  daysCount: number;
+  reason: string;
+  status: 'pending' | 'approved' | 'rejected';
+  rejectionReason?: string;
+  approvedBy?: string;
+  createdAt: string;
+}
+
+export interface EmployeeHrFile {
+  id: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  employeeNumber: string;
+  team: AgencyTeam;
+  workMode: WorkMode;
+  contractType: 'full_time' | 'part_time' | 'freelance' | 'commission_only';
+  hireDate: string;
+  baseSalary: number; // in SAR
+  commissionPercentage?: number;
+  housingAllowance?: number; // in SAR
+  transportAllowance?: number; // in SAR
+  bonusesTotal?: number; // in SAR
+  annualLeaveBalance: number;
+  usedLeaveDays: number;
+  emergencyContact: {
+    name: string;
+    phone: string;
+    relation: string;
+  };
+  nationalIdOrIqama?: string;
+  status: 'active' | 'on_leave' | 'probation' | 'terminated';
+}
+
+export interface PerformanceAppraisal {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  evaluatorId: string;
+  evaluatorName: string;
+  cycle: string; // e.g., '2026-Q1'
+  workMode: WorkMode;
+  ratings: {
+    technicalProductivity: number; // 1-5
+    qualityOfDeliverables: number; // 1-5
+    adherenceToCoc: number; // 1-5
+    communicationAndPunctuality: number; // 1-5
+    initiativeAndGrowth: number; // 1-5
+  };
+  overallScore: number; // 0-100
+  strengths: string;
+  improvementsNeeded: string;
+  recommendedBonusOrAdjustment?: number; // in SAR
+  status: 'draft' | 'submitted' | 'approved_by_founder';
+  appraisalDate: string;
+}
+
+export interface CompensationBonus {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  type: 'spot_bonus' | 'deal_commission' | 'retention_incentive' | 'overtime_allowance' | 'other';
+  amount: number; // in SAR
+  currency: 'SAR' | 'EGP';
+  reason: string;
+  month: string; // YYYY-MM
+  status: 'pending' | 'approved' | 'paid';
+  approvedBy?: string;
+  createdAt: string;
+}
+
+export interface CostCenterProfitRecord {
+  id: string;
+  departmentCode: AgencyTeam;
+  departmentNameAr: string;
+  revenue: number; // in SAR
+  cogs: number; // Direct production costs
+  opex: number; // Department operational expenses
+  salaries: number; // Salaries allocated to this department
+  netProfit: number; // revenue - (cogs + opex + salaries)
+  profitMarginPercent: number;
+  month: string; // YYYY-MM
+}
+
+export interface CashFlowForecast {
+  id: string;
+  month: string; // YYYY-MM
+  startingCash: number; // in SAR
+  projectedInflow: number; // Client retainers + project payments
+  projectedOutflow: number; // Payroll + opex + ad spend + tools
+  netCashFlow: number;
+  projectedEndingCash: number;
+  runwayMonths: number;
+}
+
+

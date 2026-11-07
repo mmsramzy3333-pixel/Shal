@@ -18,16 +18,22 @@ import {
   Zap,
   Sun,
   Moon,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react';
 
 interface HeaderProps {
   onMobileMenuToggle: () => void;
   onOpenProfileModal?: () => void;
+  isSidebarHidden?: boolean;
+  onToggleSidebarHidden?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   onMobileMenuToggle,
   onOpenProfileModal,
+  isSidebarHidden = false,
+  onToggleSidebarHidden,
 }) => {
   const {
     currentUser,
@@ -44,6 +50,8 @@ export const Header: React.FC<HeaderProps> = ({
     logout,
     theme,
     toggleTheme,
+    currency,
+    setDisplayCurrency,
   } = useApp();
 
   const [headerTime, setHeaderTime] = useState<Date>(new Date());
@@ -76,6 +84,25 @@ export const Header: React.FC<HeaderProps> = ({
         >
           <Menu className="h-5 w-5" />
         </button>
+
+        {/* Desktop Sidebar Toggle Button (Hide/Show at any time) */}
+        {onToggleSidebarHidden && (
+          <button
+            type="button"
+            onClick={onToggleSidebarHidden}
+            className="btn-interactive rounded-xl p-2 text-[#4C5540] hover:bg-[#E9E1D6]/60 hidden lg:flex items-center gap-1.5 cursor-pointer border border-[#BDAF9C]/35 bg-white shadow-2xs"
+            title={isSidebarHidden ? (language === 'ar' ? 'إظهار القائمة الجانبية' : 'Show Sidebar') : (language === 'ar' ? 'إخفاء القائمة الجانبية' : 'Hide Sidebar')}
+          >
+            {isSidebarHidden ? (
+              <PanelLeftOpen className="h-4 w-4 text-[#4C5540]" />
+            ) : (
+              <PanelLeftClose className="h-4 w-4 text-[#4C5540]" />
+            )}
+            <span className="text-[10px] font-bold text-[#24291F] hidden xl:inline">
+              {isSidebarHidden ? (language === 'ar' ? 'إظهار القائمة' : 'Show Menu') : (language === 'ar' ? 'إخفاء القائمة' : 'Hide')}
+            </span>
+          </button>
+        )}
 
         {/* Shal Agency Brand Logo In Header */}
         <div className="flex items-center gap-2 py-1">
@@ -278,6 +305,17 @@ export const Header: React.FC<HeaderProps> = ({
           </span>
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
         </div>
+
+        {/* Dual Currency Fast Switcher (SAR / EGP) */}
+        <button
+          type="button"
+          onClick={() => setDisplayCurrency(currency === 'SAR' ? 'EGP' : 'SAR')}
+          className="btn-interactive rounded-xl border border-[#BDAF9C]/35 bg-white dark:bg-[#1E251D] px-2.5 py-1.5 text-xs font-black text-[#4C5540] dark:text-[#A4C08B] hover:bg-[#FAF7F2] transition-colors cursor-pointer shadow-2xs flex items-center gap-1 font-mono"
+          title={currency === 'SAR' ? 'التحويل إلى الجنيه المصري (EGP)' : 'التحويل إلى الريال السعودي (SAR)'}
+        >
+          <span className="h-2 w-2 rounded-full bg-emerald-500" />
+          <span>{currency}</span>
+        </button>
 
         {/* Dark Mode Theme Toggle */}
         <button

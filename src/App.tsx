@@ -15,9 +15,12 @@ import { ChatView } from './components/chat/ChatView';
 import { AttendanceView } from './components/attendance/AttendanceView';
 import { ContractsView } from './components/contracts/ContractsView';
 import { ReportsView } from './components/reports/ReportsView';
+import { FinanceAccountingView } from './components/finance/FinanceAccountingView';
+import { KpiCocManagementView } from './components/kpi/KpiCocManagementView';
+import { HrManagementView } from './components/hr/HrManagementView';
 import { LoginPage } from './components/auth/LoginPage';
 import { BrandFooter } from './components/layout/BrandFooter';
-import { ShieldAlert } from 'lucide-react';
+import { ShieldAlert, PanelLeftOpen } from 'lucide-react';
 
 const MainLayout: React.FC = () => {
   const {
@@ -28,9 +31,35 @@ const MainLayout: React.FC = () => {
     currentUser,
     authLoading,
     showToast,
+    isOwner,
+    isAdminOrOwner,
   } = useApp();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+
+  // Sidebar Collapse & Hide State (Persisted in localStorage)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+    return localStorage.getItem('shal_sidebar_collapsed') === 'true';
+  });
+  const [isSidebarHidden, setIsSidebarHidden] = useState<boolean>(() => {
+    return localStorage.getItem('shal_sidebar_hidden') === 'true';
+  });
+
+  const toggleSidebarCollapse = () => {
+    setIsSidebarCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem('shal_sidebar_collapsed', String(next));
+      return next;
+    });
+  };
+
+  const toggleSidebarHidden = () => {
+    setIsSidebarHidden((prev) => {
+      const next = !prev;
+      localStorage.setItem('shal_sidebar_hidden', String(next));
+      return next;
+    });
+  };
 
   // Global Keyboard Shortcuts Listener (Ctrl+Alt+D, Ctrl+Alt+T, Ctrl+Alt+C, Ctrl+Alt+S)
   useEffect(() => {
@@ -168,6 +197,30 @@ const MainLayout: React.FC = () => {
       case 'reports':
         return <ReportsView />;
 
+      case 'finance':
+        if (!isOwner && !isAdminOrOwner && !hasPermission('can_edit_financials')) {
+          return (
+            <div className="flex flex-col items-center justify-center rounded-2xl border border-rose-200 bg-white p-12 text-center shadow-xs">
+              <ShieldAlert className="h-12 w-12 text-rose-500" />
+              <h3 className="mt-3 text-base font-bold text-slate-900">
+                {language === 'ar' ? 'المنظومة المالية والمحاسبية محصورة بالإدارة فقط' : 'Finance Area Restricted'}
+              </h3>
+              <p className="mt-1 text-xs text-slate-500 max-w-md leading-relaxed">
+                {language === 'ar'
+                  ? 'يتطلب الوصول إلى سجلات المحاسبة، الأرباح والخسائر، وشجرة الحسابات صلاحيات الإدارة العليا (Founder) أو المدير التنفيذي.'
+                  : 'Access to financial statements and general ledger requires Executive / Founder privileges.'}
+              </p>
+            </div>
+          );
+        }
+        return <FinanceAccountingView />;
+
+      case 'kpi_coc':
+        return <KpiCocManagementView />;
+
+      case 'hr':
+        return <HrManagementView />;
+
       case 'settings':
         return <SettingsView />;
 
@@ -192,7 +245,28 @@ const MainLayout: React.FC = () => {
         isMobileOpen={isMobileMenuOpen}
         onMobileClose={() => setIsMobileMenuOpen(false)}
         onOpenProfileModal={() => setIsProfileModalOpen(true)}
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapse={toggleSidebarCollapse}
+        isHidden={isSidebarHidden}
+        onToggleHidden={toggleSidebarHidden}
       />
+
+      {/* Floating Reveal Sidebar Handle when Sidebar is Hidden */}
+      {isSidebarHidden && (
+        <button
+          type="button"
+          onClick={toggleSidebarHidden}
+          className={`fixed top-20 ${
+            language === 'ar' ? 'right-0 rounded-l-2xl border-r-0' : 'left-0 rounded-r-2xl border-l-0'
+          } z-40 flex items-center gap-2 bg-[#24291F] text-white px-3 py-2 shadow-2xl border border-white/20 hover:bg-[#3B4432] transition-all cursor-pointer group animate-in slide-in-from-top-2 duration-200`}
+          title={language === 'ar' ? 'إظهار القائمة الجانبية (Show Sidebar)' : 'Show Sidebar'}
+        >
+          <PanelLeftOpen className="h-4 w-4 text-amber-400 group-hover:scale-110 transition-transform" />
+          <span className="text-xs font-bold hidden sm:inline text-white">
+            {language === 'ar' ? 'القائمة' : 'Menu'}
+          </span>
+        </button>
+      )}
 
       {/* Main Content Area */}
       <div className="flex flex-1 flex-col min-w-0">
@@ -200,6 +274,8 @@ const MainLayout: React.FC = () => {
         <Header
           onMobileMenuToggle={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
           onOpenProfileModal={() => setIsProfileModalOpen(true)}
+          isSidebarHidden={isSidebarHidden}
+          onToggleSidebarHidden={toggleSidebarHidden}
         />
 
         {/* Dynamic View Canvas */}

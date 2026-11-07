@@ -39,6 +39,18 @@ export const LoginPage: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
+  const [copiedPass, setCopiedPass] = useState(false);
+
+  const handleCopyUnifiedPassword = () => {
+    try {
+      navigator.clipboard.writeText('Shal@2025');
+      setCopiedPass(true);
+      setTimeout(() => setCopiedPass(false), 2500);
+    } catch {
+      // ignore
+    }
+  };
+
   // Supabase Password Reset Flow states
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
@@ -66,27 +78,83 @@ export const LoginPage: React.FC = () => {
     },
     {
       id: 'p-3',
-      name: 'محمود 01 | فاوندر',
-      roleTitle: 'Founder',
-      badge: '01',
-      email: 'mahmoud01.founder@shal.agency',
-      team: 'management',
-    },
-    {
-      id: 'p-4',
-      name: 'محمود 04 | العمليات',
-      roleTitle: 'Ops Manager',
-      badge: '04',
-      email: 'mahmoud04.ops@shal.agency',
+      name: 'محمود العمليات | أوبريشن',
+      roleTitle: 'Operations Manager',
+      badge: 'Ops',
+      email: 'operations@shal.agency',
       team: 'operations',
     },
     {
+      id: 'p-4',
+      name: 'سارة التسويق | ماركتنج',
+      roleTitle: 'Marketing Manager',
+      badge: 'Marketing',
+      email: 'marketing@shal.agency',
+      team: 'marketing',
+    },
+    {
       id: 'p-5',
-      name: 'محمود 11 | ميديا باير',
+      name: 'طارق المبيعات | سيلز مانجر',
+      roleTitle: 'Sales Manager',
+      badge: 'Sales',
+      email: 'sales@shal.agency',
+      team: 'sales',
+    },
+    {
+      id: 'p-6',
+      name: 'نور الحسابات | أكونت مانجر',
+      roleTitle: 'Account Manager',
+      badge: 'Accounts',
+      email: 'accounts@shal.agency',
+      team: 'operations',
+    },
+    {
+      id: 'p-7',
+      name: 'عمر الإعلانات | ميديا باير',
       roleTitle: 'Media Buyer',
-      badge: '11',
-      email: 'mahmoud11.ads@shal.agency',
+      badge: 'Ads',
+      email: 'ads@shal.agency',
       team: 'media_buying',
+    },
+    {
+      id: 'p-8',
+      name: 'ليلى السوشيال | سوشيال ميديا',
+      roleTitle: 'Social Media',
+      badge: 'Social',
+      email: 'social@shal.agency',
+      team: 'social',
+    },
+    {
+      id: 'p-9',
+      name: 'كريم المحتوى | كونتنت كريتور',
+      roleTitle: 'Content Creator',
+      badge: 'Content',
+      email: 'content@shal.agency',
+      team: 'content',
+    },
+    {
+      id: 'p-10',
+      name: 'ياسمين التصميم | مصممة UI/UX',
+      roleTitle: 'UI/UX Designer',
+      badge: 'Design',
+      email: 'design@shal.agency',
+      team: 'uiux',
+    },
+    {
+      id: 'p-11',
+      name: 'أحمد السيو | خبير SEO',
+      roleTitle: 'SEO Specialist',
+      badge: 'SEO',
+      email: 'seo@shal.agency',
+      team: 'seo',
+    },
+    {
+      id: 'p-12',
+      name: 'مصطفى البرمجة | ويب ديفيلوبر',
+      roleTitle: 'Web Developer',
+      badge: 'Dev',
+      email: 'dev@shal.agency',
+      team: 'developer',
     },
   ];
 
@@ -532,7 +600,7 @@ export const LoginPage: React.FC = () => {
             <div className="flex items-center justify-between mb-2">
               <span className="text-[11px] font-bold text-slate-800 dark:text-white flex items-center gap-1.5">
                 <Sparkles className="h-3.5 w-3.5 text-amber-500" />
-                {language === 'ar' ? 'حسابات الدخول السريع (تعبئة البريد فقط)' : 'Quick Access (Email Only)'}
+                {language === 'ar' ? 'حسابات الدخول السريع لأدوار الوكالة' : 'Quick Role Access'}
               </span>
               <div className="flex items-center gap-2">
                 <button
@@ -547,6 +615,33 @@ export const LoginPage: React.FC = () => {
               </div>
             </div>
 
+            {/* Unified Password Direct Banner */}
+            <div className="mb-3 flex items-center justify-between rounded-xl bg-amber-500/10 border border-amber-500/20 px-3 py-2 text-xs">
+              <div className="flex items-center gap-2">
+                <Key className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                <span className="text-[11px] font-semibold text-amber-900 dark:text-amber-200">
+                  {language === 'ar' ? 'كلمة المرور الموحدة:' : 'Unified Password:'}{' '}
+                  <strong className="font-mono bg-white/80 dark:bg-black/30 px-1.5 py-0.5 rounded text-slate-900 dark:text-white">
+                    Shal@2025
+                  </strong>
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={handleCopyUnifiedPassword}
+                className="text-[10px] font-bold px-2 py-1 rounded bg-[#4C5540] text-white hover:bg-[#3B4432] transition-colors cursor-pointer flex items-center gap-1 shrink-0"
+              >
+                {copiedPass ? (
+                  <>
+                    <Check className="h-3 w-3 text-emerald-300" />
+                    <span>{language === 'ar' ? 'تم النسخ!' : 'Copied!'}</span>
+                  </>
+                ) : (
+                  <span>{language === 'ar' ? 'نسخ الباسورد' : 'Copy'}</span>
+                )}
+              </button>
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {presets.map((preset) => (
                 <div
@@ -557,7 +652,7 @@ export const LoginPage: React.FC = () => {
                     type="button"
                     onClick={() => {
                       setEmail(preset.email);
-                      setPassword('');
+                      setPassword('Shal@2025');
                       setErrorMessage(null);
                     }}
                     className="flex-1 text-start cursor-pointer"

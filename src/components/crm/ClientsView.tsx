@@ -32,6 +32,7 @@ import {
   Sparkles,
   ArrowRight,
 } from 'lucide-react';
+import { CurrencyConverterBar } from '../common/CurrencyConverterBar';
 
 export const ClientsView: React.FC = () => {
   const {
@@ -46,6 +47,8 @@ export const ClientsView: React.FC = () => {
     language,
     setActiveTab,
     showToast,
+    formatAmount,
+    formatDualAmount,
   } = useApp();
 
   const [activeCrmTab, setActiveCrmTab] = useState<'clients' | 'deals'>('clients');
@@ -583,7 +586,7 @@ export const ClientsView: React.FC = () => {
     showToast({
       type: 'success',
       title: 'تمت إضافة الصفقة الجديدة',
-      message: `تم قيد الصفقة بقيمة $${newDeal.value.toLocaleString()} USD بنجاح.`,
+      message: `تم قيد الصفقة بقيمة ${formatAmount(newDeal.value)} بنجاح.`,
     });
   };
 
@@ -594,6 +597,9 @@ export const ClientsView: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Real-time Dual Currency Converter Bar (SAR / EGP) */}
+      <CurrencyConverterBar />
+
       {/* Header & Title */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
@@ -719,7 +725,7 @@ export const ClientsView: React.FC = () => {
           <TrendingUp className="h-4 w-4" />
           <span>{language === 'ar' ? 'صفقات ومسار المبيعات (Sales Pipeline)' : 'Sales Pipeline Deals'}</span>
           <span className="rounded-full bg-emerald-700 text-white px-2 py-0.5 text-[10px] font-mono">
-            ${totalPipelineValue.toLocaleString()}
+            {formatAmount(totalPipelineValue)}
           </span>
         </button>
       </div>
@@ -897,8 +903,8 @@ export const ClientsView: React.FC = () => {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="rounded-2xl border border-[#BDAF9C]/30 bg-white dark:bg-[#181D18] p-4 shadow-xs">
               <span className="text-xs text-slate-500 dark:text-[#BDAF9C] block">{language === 'ar' ? 'إجمالي مسار المبيعات (Pipeline)' : 'Total Pipeline Value'}</span>
-              <span className="text-2xl font-black text-[#4C5540] dark:text-[#A4C08B] font-mono mt-1 block">
-                ${totalPipelineValue.toLocaleString()} <span className="text-xs font-normal text-slate-400">USD</span>
+              <span className="text-xl font-black text-[#4C5540] dark:text-[#A4C08B] font-mono mt-1 block">
+                {formatDualAmount(totalPipelineValue)}
               </span>
               <span className="text-[11px] text-slate-400 mt-1 block">
                 {salesDeals.filter(d => d.stage !== 'closed_lost').length} {language === 'ar' ? 'صفقات نشطة قيد المتابعة' : 'active deals'}
@@ -907,8 +913,8 @@ export const ClientsView: React.FC = () => {
 
             <div className="rounded-2xl border border-[#BDAF9C]/30 bg-white dark:bg-[#181D18] p-4 shadow-xs">
               <span className="text-xs text-slate-500 dark:text-[#BDAF9C] block">{language === 'ar' ? 'الصفقات الرابحة المعتمدة' : 'Closed Won Deals'}</span>
-              <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400 font-mono mt-1 block">
-                ${salesDeals.filter(d => d.stage === 'closed_won').reduce((acc, d) => acc + d.value, 0).toLocaleString()}
+              <span className="text-xl font-black text-emerald-600 dark:text-emerald-400 font-mono mt-1 block">
+                {formatDualAmount(salesDeals.filter(d => d.stage === 'closed_won').reduce((acc, d) => acc + d.value, 0))}
               </span>
               <span className="text-[11px] text-slate-400 mt-1 block">
                 {salesDeals.filter(d => d.stage === 'closed_won').length} {language === 'ar' ? 'عقود تم إغلاقها بنجاح' : 'deals won'}
@@ -917,8 +923,8 @@ export const ClientsView: React.FC = () => {
 
             <div className="rounded-2xl border border-[#BDAF9C]/30 bg-white dark:bg-[#181D18] p-4 shadow-xs">
               <span className="text-xs text-slate-500 dark:text-[#BDAF9C] block">{language === 'ar' ? 'بانتظار توقيع العقد' : 'Contract Pending'}</span>
-              <span className="text-2xl font-black text-purple-600 dark:text-purple-400 font-mono mt-1 block">
-                ${salesDeals.filter(d => d.stage === 'contract_pending').reduce((acc, d) => acc + d.value, 0).toLocaleString()}
+              <span className="text-xl font-black text-purple-600 dark:text-purple-400 font-mono mt-1 block">
+                {formatDualAmount(salesDeals.filter(d => d.stage === 'contract_pending').reduce((acc, d) => acc + d.value, 0))}
               </span>
               <span className="text-[11px] text-slate-400 mt-1 block">
                 {language === 'ar' ? 'جاهزة للربط مع قسم العقود' : 'Ready for contract'}
@@ -993,7 +999,7 @@ export const ClientsView: React.FC = () => {
 
                           <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-200/50 dark:border-[#2D372B]">
                             <span className="font-black text-[#4C5540] dark:text-[#A4C08B] font-mono">
-                              ${deal.value.toLocaleString()}
+                              {formatAmount(deal.value)}
                             </span>
                             <span className="rounded-md bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 px-1.5 py-0.5 text-[10px] font-bold">
                               {deal.probability}%

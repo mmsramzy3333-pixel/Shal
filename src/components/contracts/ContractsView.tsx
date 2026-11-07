@@ -26,6 +26,7 @@ import {
   HelpCircle,
   Copy,
 } from 'lucide-react';
+import { CurrencyConverterBar } from '../common/CurrencyConverterBar';
 
 const INITIAL_CONTRACTS: CompanyContract[] = [
   {
@@ -36,7 +37,7 @@ const INITIAL_CONTRACTS: CompanyContract[] = [
     type: 'retainer',
     status: 'active',
     value: 8500,
-    currency: 'USD',
+    currency: 'SAR',
     startDate: '2026-01-01',
     endDate: '2026-12-31',
     signedDate: '2025-12-28',
@@ -56,7 +57,7 @@ const INITIAL_CONTRACTS: CompanyContract[] = [
     type: 'nda',
     status: 'active',
     value: 0,
-    currency: 'USD',
+    currency: 'SAR',
     startDate: '2026-02-15',
     endDate: '2028-02-15',
     signedDate: '2026-02-15',
@@ -76,7 +77,7 @@ const INITIAL_CONTRACTS: CompanyContract[] = [
     type: 'project_fixed',
     status: 'pending_signature',
     value: 12000,
-    currency: 'USD',
+    currency: 'SAR',
     startDate: '2026-03-01',
     endDate: '2026-05-30',
     signedByAgency: 'م. مدحت | الفاوندر',
@@ -94,7 +95,7 @@ const INITIAL_CONTRACTS: CompanyContract[] = [
     type: 'retainer',
     status: 'active',
     value: 4500,
-    currency: 'USD',
+    currency: 'SAR',
     startDate: '2026-01-15',
     endDate: '2026-07-15',
     signedDate: '2026-01-14',
@@ -109,7 +110,16 @@ const INITIAL_CONTRACTS: CompanyContract[] = [
 ];
 
 export const ContractsView: React.FC = () => {
-  const { language, clients, currentUser, isOwner, isAdminOrOwner, showToast } = useApp();
+  const {
+    language,
+    clients,
+    currentUser,
+    isOwner,
+    isAdminOrOwner,
+    showToast,
+    formatAmount,
+    formatDualAmount,
+  } = useApp();
 
   const [contracts, setContracts] = useState<CompanyContract[]>(() => {
     try {
@@ -459,7 +469,7 @@ export const ContractsView: React.FC = () => {
       doc.setFontSize(9);
       doc.setFont('helvetica', 'normal');
       doc.text(`Client: ${contract.clientName}`, 20, 53);
-      doc.text(`Contract Value: $${contract.value.toLocaleString()} ${contract.currency}`, 20, 61);
+      doc.text(`Contract Value: ${formatAmount(contract.value)}`, 20, 61);
       doc.text(`Status: ${contract.status.toUpperCase()} | Type: ${contract.type.toUpperCase()}`, 20, 69);
 
       doc.text(`Duration: ${contract.startDate} to ${contract.endDate}`, 110, 53);
@@ -520,6 +530,9 @@ export const ContractsView: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Real-time Dual Currency Converter Bar (SAR / EGP) */}
+      <CurrencyConverterBar />
+
       {/* Header Banner */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
@@ -715,7 +728,18 @@ export const ContractsView: React.FC = () => {
                     </td>
                     <td className="p-3.5">{getTypeBadge(contract.type)}</td>
                     <td className="p-3.5 font-bold font-mono text-slate-800 dark:text-slate-200">
-                      {contract.value > 0 ? `$${contract.value.toLocaleString()} ${contract.currency}` : 'اتفاقية سرية'}
+                      {contract.value > 0 ? (
+                        <div className="space-y-0.5">
+                          <span className="text-xs font-black text-[#4C5540] dark:text-[#A4C08B]">
+                            {formatAmount(contract.value)}
+                          </span>
+                          <span className="block text-[10px] text-slate-400 font-normal">
+                            {formatDualAmount(contract.value)}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-slate-400 text-xs font-normal">اتفاقية سرية (NDA)</span>
+                      )}
                     </td>
                     <td className="p-3.5 text-[11px] text-slate-600 dark:text-slate-400 font-mono">
                       <div>{contract.startDate}</div>
